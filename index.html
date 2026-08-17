@@ -98,7 +98,6 @@ label.f > span{ display:block; font-size:12.5px; color:var(--muted); margin:0 2p
 .set .del{ width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
   color:var(--muted); font-size:16px; }
 .set.done .idx{ color:var(--good); border-color:rgba(12,163,12,.4); }
-.set.done input{ color:var(--ink2); background:transparent; }
 .set.done .chk{ background:var(--good); border-color:transparent; color:#fff; }
 .set .in.err{ outline:2px solid var(--danger); }
 .entryfoot{ display:flex; gap:8px; margin-top:10px; }
@@ -951,7 +950,7 @@ function entryCard(wo, entry, live, refresh){
         ex ? ex.name : '(gelöschte Übung)'),
       ex && ex.notes ? el('div', { class: 'enote' }, ex.notes) : null),
     restChip,
-    el('button', { class: 'del', style: 'width:30px;height:30px;color:var(--muted)', 'aria-label': 'Übung entfernen',
+    el('button', { class: 'del', style: 'width:36px;height:36px;border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:15px', 'aria-label': 'Übung entfernen',
       onclick: async () => {
         const hasData = validSets(entry).length > 0;
         if (!hasData || await confirmDlg(`„${ex ? ex.name : 'Übung'}" samt Sätzen aus diesem Training entfernen?`, { okLabel: 'Entfernen', danger: true })){
@@ -993,11 +992,22 @@ function restFor(entry){
 function setRow(wo, entry, s, i, live, prev, refresh){
   const pv = prev ? prev.sets[i] : null;
   const row = el('div', { class: 'set' + (s.done ? ' done' : '') });
+  let wAtFocus = null, jumpT = null;
   const wIn = el('input', { class: 'in', inputmode: 'decimal', autocomplete: 'off', enterkeyhint: 'next',
     value: fmtInput(s.w), placeholder: pv ? fmtInput(pv.w) : 'kg',
-    oninput: e => { s.w = parseNum(e.target.value); e.target.classList.remove('err'); saveSoon(); } });
+    onfocus: e => { wAtFocus = e.target.value; setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
+    onblur: () => clearTimeout(jumpT),
+    oninput: e => {
+      s.w = parseNum(e.target.value); e.target.classList.remove('err'); saveSoon();
+      /* Kurz nach der letzten Ziffer automatisch zu den Wiederholungen springen */
+      clearTimeout(jumpT);
+      jumpT = setTimeout(() => {
+        if (document.activeElement === wIn && s.w !== null && wIn.value && wIn.value !== wAtFocus) rIn.focus();
+      }, 1000);
+    } });
   const rIn = el('input', { class: 'in', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'done',
     value: s.r === null || s.r === undefined ? '' : String(s.r), placeholder: pv ? String(pv.r) : 'Wdh.',
+    onfocus: e => { setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
     oninput: e => { s.r = parseInt0(e.target.value); e.target.classList.remove('err'); saveSoon(); } });
   const chk = el('button', { class: 'chk', html: IC.check, 'aria-label': 'Satz abhaken' });
   chk.addEventListener('click', () => {
