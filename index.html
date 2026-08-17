@@ -1,0 +1,1906 @@
+<meta charset="utf-8">
+<title>Eisenbuch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+/* == Eisenbuch — dunkles Trainings-Logbuch (bewusst nur ein Thema) ============ */
+:root{
+  --bg:#0d0d0d; --surface:#1a1a19; --raised:#232322; --sunken:#141413;
+  --line:rgba(255,255,255,.10); --grid:#2c2c2a;
+  --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --accent:#3987e5; --accent-deep:#256abf; --wash:rgba(57,135,229,.14);
+  --good:#0ca30c; --goodwash:rgba(12,163,12,.16);
+  --warn:#fab219; --danger:#e66767; --dangerwash:rgba(230,103,103,.12);
+  --r:14px; --rs:10px;
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html{ color-scheme:dark; }
+html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink);
+  font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; }
+body{ min-height:100vh; }
+button{ font:inherit; color:inherit; background:none; border:none; padding:0; cursor:pointer; }
+input,textarea,select{ font:inherit; color:var(--ink); }
+::placeholder{ color:var(--muted); opacity:1; }
+
+#app{ max-width:520px; margin:0 auto;
+  padding:env(safe-area-inset-top) 14px calc(170px + env(safe-area-inset-bottom)); }
+
+/* Kopf */
+.top{ display:flex; align-items:center; justify-content:space-between;
+  padding:14px 2px 8px; }
+.logo{ font-size:15px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
+.logo b{ color:var(--accent); font-weight:800; }
+.iconbtn{ width:40px; height:40px; border-radius:12px; display:grid; place-items:center;
+  color:var(--ink2); border:1px solid var(--line); background:var(--surface); }
+.iconbtn:active{ background:var(--raised); }
+
+/* Banner (Speicher-Warnung / Sicherungs-Hinweis) */
+.banner{ border-radius:var(--r); padding:12px 14px; margin:8px 0; font-size:14px; line-height:1.45;
+  border:1px solid var(--line); background:var(--surface); color:var(--ink2); }
+.banner.danger{ border-color:rgba(230,103,103,.45); background:var(--dangerwash); color:var(--ink); }
+.banner .bact{ margin-top:8px; display:flex; gap:8px; }
+
+/* Karten & Grundbausteine */
+.card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+  padding:14px; margin:10px 0; }
+.h1{ font-size:22px; font-weight:750; margin:14px 2px 4px; letter-spacing:-.01em; }
+.h2{ font-size:13px; font-weight:650; text-transform:uppercase; letter-spacing:.09em;
+  color:var(--muted); margin:18px 2px 6px; }
+.sub{ color:var(--muted); font-size:13px; }
+.row{ display:flex; align-items:center; gap:10px; }
+.grow{ flex:1 1 auto; min-width:0; }
+.btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  border-radius:12px; padding:12px 16px; font-size:16px; font-weight:650;
+  border:1px solid var(--line); background:var(--raised); color:var(--ink); min-height:48px; }
+.btn:active{ filter:brightness(1.15); }
+.btn.primary{ background:var(--accent-deep); border-color:transparent; color:#fff; }
+.btn.ghost{ background:transparent; }
+.btn.danger{ color:var(--danger); border-color:rgba(230,103,103,.35); background:transparent; }
+.btn.small{ min-height:38px; padding:8px 12px; font-size:14px; border-radius:10px; }
+.btn.block{ width:100%; }
+.chip{ display:inline-flex; align-items:center; gap:5px; font-size:12.5px; color:var(--ink2);
+  border:1px solid var(--line); border-radius:999px; padding:4px 10px; background:var(--sunken); }
+.chip.acc{ color:var(--accent); border-color:rgba(57,135,229,.4); }
+.chip.up{ color:var(--good); border-color:rgba(12,163,12,.45); font-weight:650; }
+.chip.down{ color:var(--danger); border-color:rgba(230,103,103,.45); font-weight:650; }
+.chip.rec{ color:var(--warn); border-color:rgba(250,178,25,.45); font-weight:650; }
+
+/* Eingaben */
+.in{ background:var(--sunken); border:1px solid var(--line); border-radius:var(--rs);
+  padding:11px 12px; font-size:17px; width:100%; }
+.in:focus{ outline:2px solid var(--accent); outline-offset:0; border-color:transparent; }
+textarea.in{ resize:vertical; min-height:74px; line-height:1.4; }
+label.f{ display:block; margin:12px 0 0; }
+label.f > span{ display:block; font-size:12.5px; color:var(--muted); margin:0 2px 5px; }
+
+/* Trainings-Eintrag (Übung im Training) */
+.entry{ padding:12px 12px 10px; }
+.entry .ename{ font-size:17px; font-weight:700; }
+.entry .enote{ color:var(--muted); font-size:12.5px; font-style:italic; margin-top:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.entry .prev{ color:var(--muted); font-size:12.5px; margin:6px 0 2px; }
+.sethead{ display:grid; grid-template-columns:30px 1fr 1fr 46px 30px; gap:8px;
+  font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em;
+  margin:8px 0 2px; text-align:center; }
+.set{ display:grid; grid-template-columns:30px 1fr 1fr 46px 30px; gap:8px; align-items:center;
+  margin:6px 0; }
+.set .idx{ width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
+  font-size:13px; font-weight:650; color:var(--muted); background:var(--sunken);
+  border:1px solid var(--line); }
+.set input{ text-align:center; padding:10px 6px; font-variant-numeric:tabular-nums; }
+.set .chk{ width:46px; height:46px; border-radius:12px; border:1px solid var(--line);
+  display:grid; place-items:center; color:var(--muted); background:var(--sunken); }
+.set .del{ width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
+  color:var(--muted); font-size:16px; }
+.set.done .idx{ color:var(--good); border-color:rgba(12,163,12,.4); }
+.set.done input{ color:var(--ink2); background:transparent; }
+.set.done .chk{ background:var(--good); border-color:transparent; color:#fff; }
+.set .in.err{ outline:2px solid var(--danger); }
+.entryfoot{ display:flex; gap:8px; margin-top:10px; }
+.entryfoot .in{ font-size:16px; padding:8px 12px; }
+
+/* Timer-Leiste */
+#timerdock{ position:fixed; left:0; right:0; bottom:calc(64px + env(safe-area-inset-bottom));
+  display:none; z-index:40; padding:0 10px; }
+#timerdock.show{ display:block; }
+.tinner{ max-width:520px; margin:0 auto; background:var(--raised); border:1px solid var(--line);
+  border-radius:14px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+.tbar{ height:4px; background:var(--sunken); }
+.tbar > div{ height:100%; width:0%; background:var(--accent); transition:width .25s linear; }
+.tmain{ display:flex; align-items:center; gap:10px; padding:9px 12px; }
+.tlabel{ font-size:12.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.ttime{ font-size:26px; font-weight:750; font-variant-numeric:tabular-nums; min-width:86px; }
+.tbtn{ min-width:46px; height:40px; border-radius:10px; border:1px solid var(--line);
+  font-size:13.5px; font-weight:650; color:var(--ink2); padding:0 8px; }
+#timerdock.over .tinner{ border-color:rgba(12,163,12,.5); }
+#timerdock.over .ttime{ color:var(--good); font-size:19px; }
+#timerdock.over .tbar > div{ background:var(--good); }
+
+/* Tab-Leiste */
+nav.tabs{ position:fixed; left:0; right:0; bottom:0; z-index:50;
+  background:rgba(13,13,13,.92); backdrop-filter:blur(10px);
+  border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
+.tabinner{ max-width:520px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr); }
+.tab{ display:flex; flex-direction:column; align-items:center; gap:3px; padding:9px 0 7px;
+  color:var(--muted); font-size:11px; font-weight:600; }
+.tab.on{ color:var(--accent); }
+.tab svg{ width:22px; height:22px; }
+
+/* Listen (Übungen / Verlauf) */
+.li{ display:flex; align-items:center; gap:12px; padding:13px 4px; width:100%; text-align:left;
+  border-bottom:1px solid var(--line); }
+.li:last-child{ border-bottom:none; }
+.li .t{ font-size:16px; font-weight:650; }
+.li .s{ color:var(--muted); font-size:12.5px; margin-top:2px; }
+.datebox{ width:46px; flex:0 0 46px; text-align:center; background:var(--sunken);
+  border:1px solid var(--line); border-radius:11px; padding:6px 0; }
+.datebox b{ display:block; font-size:17px; }
+.datebox span{ font-size:11px; color:var(--muted); text-transform:uppercase; }
+
+/* Statistik */
+.filters{ display:flex; flex-direction:column; gap:8px; margin:8px 0 4px; }
+.seg{ display:flex; background:var(--surface); border:1px solid var(--line);
+  border-radius:11px; padding:3px; gap:3px; }
+.seg button{ flex:1; padding:8px 4px; border-radius:8px; font-size:13.5px; font-weight:600;
+  color:var(--muted); }
+.seg button.on{ background:var(--raised); color:var(--ink); }
+select.in{ appearance:none; -webkit-appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;
+  background-size:5px 5px; background-repeat:no-repeat; padding-right:34px; }
+.tiles{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:10px 0; }
+.tile{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+.tile .l{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+.tile .v{ font-size:21px; font-weight:750; margin-top:3px; }
+.tile .d{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+.chartwrap{ position:relative; margin-top:6px; }
+.chartwrap svg{ display:block; width:100%; }
+.tooltip{ position:absolute; pointer-events:none; background:var(--raised);
+  border:1px solid var(--line); border-radius:9px; padding:6px 10px; font-size:12.5px;
+  color:var(--muted); display:none; white-space:nowrap; box-shadow:0 4px 16px rgba(0,0,0,.45);
+  transform:translate(-50%,0); z-index:5; }
+.tooltip b{ display:block; color:var(--ink); font-size:14.5px; font-variant-numeric:tabular-nums; }
+.datatable{ width:100%; border-collapse:collapse; font-size:13.5px; margin-top:8px; }
+.datatable th{ text-align:left; color:var(--muted); font-size:11.5px; text-transform:uppercase;
+  letter-spacing:.06em; font-weight:600; padding:6px 8px; border-bottom:1px solid var(--line); }
+.datatable td{ padding:7px 8px; border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums; }
+.datatable td:not(:first-child), .datatable th:not(:first-child){ text-align:right; }
+.chart-empty{ color:var(--muted); font-size:14px; padding:34px 0; text-align:center; }
+
+/* Sheets (Unterfenster) */
+#sheets .backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:60; }
+.sheet{ position:fixed; left:0; right:0; bottom:0; z-index:61; background:var(--surface);
+  border:1px solid var(--line); border-bottom:none; border-radius:18px 18px 0 0;
+  max-height:90vh; overflow:auto; padding:6px 16px calc(20px + env(safe-area-inset-bottom));
+  animation:up .18s ease-out; }
+.sheet .grab{ width:38px; height:4px; border-radius:2px; background:var(--line); margin:8px auto 4px; }
+.sheet .shead{ display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:8px 0 4px; }
+.sheet .shead .t{ font-size:18px; font-weight:750; }
+@keyframes up{ from{ transform:translateY(30px); opacity:.6; } to{ transform:none; opacity:1; } }
+@media (prefers-reduced-motion:reduce){ .sheet{ animation:none; } *{ transition:none !important; } }
+.sheetin{ max-width:520px; margin:0 auto; }
+
+/* Bestätigen-Dialog */
+.cwrap{ position:fixed; inset:0; z-index:70; display:grid; place-items:center; padding:24px;
+  background:rgba(0,0,0,.55); }
+.cbox{ background:var(--raised); border:1px solid var(--line); border-radius:16px;
+  padding:18px; max-width:340px; width:100%; }
+.cbox .m{ font-size:15.5px; line-height:1.5; }
+.cbox .a{ display:flex; gap:8px; margin-top:16px; }
+.cbox .a .btn{ flex:1; }
+
+/* Schalter */
+.switch{ position:relative; width:50px; height:30px; flex:0 0 50px; }
+.switch input{ position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+.switch .kn{ position:absolute; inset:0; border-radius:999px; background:var(--sunken);
+  border:1px solid var(--line); transition:background .15s; }
+.switch .kn::after{ content:''; position:absolute; top:3px; left:3px; width:22px; height:22px;
+  border-radius:50%; background:var(--muted); transition:transform .15s, background .15s; }
+.switch input:checked + .kn{ background:var(--accent-deep); border-color:transparent; }
+.switch input:checked + .kn::after{ transform:translateX(20px); background:#fff; }
+.setrow{ display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }
+.setrow:last-child{ border-bottom:none; }
+.setrow .t{ font-size:15.5px; font-weight:600; }
+.setrow .s{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+
+/* Toast */
+#toast{ position:fixed; left:50%; transform:translateX(-50%);
+  bottom:calc(150px + env(safe-area-inset-bottom)); z-index:80;
+  background:var(--raised); border:1px solid var(--line); color:var(--ink);
+  border-radius:999px; padding:10px 18px; font-size:14px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s; box-shadow:0 6px 24px rgba(0,0,0,.5);
+  max-width:86vw; text-align:center; }
+#toast.show{ opacity:1; }
+
+.hidden{ display:none !important; }
+.mono{ font-variant-numeric:tabular-nums; }
+</style>
+
+<div id="app">
+  <div class="top">
+    <div class="logo">Eisen<b>buch</b></div>
+    <button class="iconbtn" id="btn-settings" aria-label="Einstellungen"></button>
+  </div>
+  <div id="banner"></div>
+  <main>
+    <section id="view-training"></section>
+    <section id="view-uebungen" class="hidden"></section>
+    <section id="view-verlauf" class="hidden"></section>
+    <section id="view-statistik" class="hidden"></section>
+  </main>
+</div>
+
+<div id="timerdock">
+  <div class="tinner">
+    <div class="tbar"><div id="tprog"></div></div>
+    <div class="tmain">
+      <div class="grow">
+        <div class="tlabel" id="tlabel">Pause</div>
+        <div class="ttime" id="ttime">0:00</div>
+      </div>
+      <button class="tbtn" id="tminus">−15</button>
+      <button class="tbtn" id="tplus">+15</button>
+      <button class="tbtn" id="tskip" aria-label="Pause beenden">✕</button>
+    </div>
+  </div>
+</div>
+
+<nav class="tabs"><div class="tabinner" id="tabbar"></div></nav>
+<div id="sheets"></div>
+<div id="toast" role="status"></div>
+
+<script>
+'use strict';
+/* =========================================================================
+   Eisenbuch — persönliches Trainings-Logbuch
+   Daten liegen lokal im Browser (localStorage + IndexedDB als Doppelboden).
+   ========================================================================= */
+
+/* ---------- kleine Helfer ---------- */
+const $ = s => document.querySelector(s);
+function el(tag, attrs = {}, ...kids){
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)){
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;            // nur für eigene Icon-SVGs!
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (k === 'value') n.value = v;
+    else if (k === 'checked') n.checked = true;
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids.flat(9)){
+    if (kid === null || kid === undefined || kid === false) continue;
+    n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return n;
+}
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+const plural = (n, sg, pl) => n + ' ' + (n === 1 ? sg : pl);
+
+/* Zahlen: deutsch anzeigen (Komma), Komma und Punkt beim Tippen akzeptieren */
+function parseNum(str){
+  if (str === null || str === undefined) return null;
+  const s = String(str).trim().replace(',', '.');
+  if (!s) return null;
+  const v = Number(s);
+  return Number.isFinite(v) && v >= 0 && v < 100000 ? Math.round(v * 100) / 100 : null;
+}
+function parseInt0(str){
+  const v = parseNum(str);
+  return v === null ? null : Math.round(v);
+}
+const fmtNum = (v, dec = 1) =>
+  (v ?? 0).toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: dec });
+const fmtKg  = v => fmtNum(v, 1) + ' kg';
+const fmtInput = v => (v === null || v === undefined) ? '' : String(v).replace('.', ',');
+
+/* Datum */
+const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const dateKey = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+const parseKey = k => new Date(+k.slice(0,4), +k.slice(5,7)-1, +k.slice(8,10));
+const fmtDay = k => { const d = parseKey(k); return WD[d.getDay()] + ', ' + d.getDate() + '. ' + MON[d.getMonth()]; };
+const fmtShort = k => k.slice(8,10) + '.' + k.slice(5,7) + '.';
+const fmtFull = k => k.slice(8,10) + '.' + k.slice(5,7) + '.' + k.slice(0,4);
+function isoWeek(d){
+  const t = new Date(d); t.setHours(0,0,0,0);
+  t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
+  const w1 = new Date(t.getFullYear(), 0, 4);
+  return 1 + Math.round(((t - w1) / 864e5 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+}
+function mondayOf(d){ const t = new Date(d); t.setHours(0,0,0,0); t.setDate(t.getDate() - ((t.getDay()+6)%7)); return t; }
+const fmtClock = sec => Math.floor(sec/60) + ':' + String(sec%60).padStart(2,'0');
+
+/* ---------- Icons ---------- */
+const IC = {
+  training: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="1" y="9.5" width="2.2" height="5" rx="1"/><rect x="4" y="6.5" width="3" height="11" rx="1.3"/><rect x="17" y="6.5" width="3" height="11" rx="1.3"/><rect x="20.8" y="9.5" width="2.2" height="5" rx="1"/><rect x="7.8" y="10.4" width="8.4" height="3.2" rx="1.2"/></svg>',
+  uebungen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="4.5" cy="6" r="1.6" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.6" fill="currentColor" stroke="none"/><path d="M9.5 6h10M9.5 12h10M9.5 18h10"/></svg>',
+  verlauf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.6V12l3.2 2.2"/></svg>',
+  statistik: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3.5" y="12.5" width="4" height="8" rx="1.4"/><rect x="10" y="7.5" width="4" height="13" rx="1.4"/><rect x="16.5" y="3.5" width="4" height="17" rx="1.4"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7.5h9M17 7.5h3"/><circle cx="15" cy="7.5" r="2.1"/><path d="M4 16.5h3M11 16.5h9"/><circle cx="9" cy="16.5" r="2.1"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M4.5 12.5l5 5L19.5 7"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" width="18" height="18"><path d="M12 5v14M5 12h14"/></svg>',
+};
+
+/* ---------- Zustand ---------- */
+const LS_KEY = 'eisenbuch-v1';
+const SEED = ['Kniebeuge','Kreuzheben','Bankdrücken','Schulterdrücken','Langhantel-Rudern',
+  'Klimmzüge','Latzug','Beinpresse','Bizeps-Curls','Trizepsdrücken am Kabel','Ausfallschritte','Seitheben'];
+
+function defaultState(){
+  return {
+    version: 1,
+    meta: { createdAt: Date.now(), updatedAt: Date.now(), lastBackupAt: null, workoutsAtBackup: 0, loads: 0 },
+    settings: { restSec: 90, sound: true, vibrate: true, wakeLock: true },
+    exercises: [],
+    workouts: [],
+    activeWorkoutId: null,
+    timer: null,
+    ui: { statsExercise: 'all', statsRange: 90, statsMetric: 'e1', welcomeDismissed: false },
+  };
+}
+let state = defaultState();
+let lsOK = false, idbOK = null;   // idbOK: null = noch unbekannt
+let curView = 'training';
+let backupHintDismissed = false;
+
+function seedExercises(st){
+  st.exercises = SEED.map(name => ({
+    id: uid(), name, notes: '', restSec: null, archived: false, createdAt: Date.now(),
+  }));
+}
+function migrate(st){
+  const d = defaultState();
+  st.meta = Object.assign(d.meta, st.meta || {});
+  st.settings = Object.assign(d.settings, st.settings || {});
+  st.ui = Object.assign(d.ui, st.ui || {});
+  /* Jede Struktur wird normalisiert, damit eine kaputte Sicherung die App nie dauerhaft lahmlegt */
+  st.exercises = (Array.isArray(st.exercises) ? st.exercises : [])
+    .filter(e => e && typeof e === 'object' && typeof e.name === 'string' && e.name.trim())
+    .map(e => ({
+      id: String(e.id || uid()), name: e.name,
+      notes: typeof e.notes === 'string' ? e.notes : '',
+      restSec: Number.isFinite(e.restSec) && e.restSec > 0 ? Math.round(e.restSec) : null,
+      archived: !!e.archived,
+      createdAt: Number.isFinite(e.createdAt) ? e.createdAt : Date.now(),
+    }));
+  st.workouts = (Array.isArray(st.workouts) ? st.workouts : [])
+    .filter(w => w && typeof w === 'object')
+    .map(w => ({
+      id: String(w.id || uid()),
+      date: (typeof w.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(w.date))
+        ? w.date : dateKey(new Date(Number.isFinite(w.startedAt) ? w.startedAt : Date.now())),
+      startedAt: Number.isFinite(w.startedAt) ? w.startedAt : null,
+      finishedAt: Number.isFinite(w.finishedAt) ? w.finishedAt : null,
+      note: typeof w.note === 'string' ? w.note : '',
+      entries: (Array.isArray(w.entries) ? w.entries : [])
+        .filter(en => en && typeof en === 'object')
+        .map(en => ({
+          id: String(en.id || uid()),
+          exerciseId: String(en.exerciseId || ''),
+          note: typeof en.note === 'string' ? en.note : '',
+          sets: (Array.isArray(en.sets) ? en.sets : [])
+            .filter(s => s && typeof s === 'object')
+            .map(s => ({
+              id: String(s.id || uid()),
+              w: Number.isFinite(s.w) ? s.w : null,
+              r: Number.isFinite(s.r) ? Math.round(s.r) : null,
+              done: !!s.done,
+              ts: Number.isFinite(s.ts) ? s.ts : null,
+            })),
+        })),
+    }));
+  st.activeWorkoutId = st.workouts.some(w => w.id === st.activeWorkoutId) ? st.activeWorkoutId : null;
+  st.timer = (st.timer && typeof st.timer === 'object' && Number.isFinite(st.timer.endAt)) ? st.timer : null;
+  st.version = 1;
+  return st;
+}
+
+/* ---------- Speicherschicht: localStorage + IndexedDB als Doppelboden ---------- */
+function lsProbe(){
+  try { localStorage.setItem('__eb_probe','1'); localStorage.removeItem('__eb_probe'); return true; }
+  catch (e) { return false; }
+}
+function idbOpen(){
+  return new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error('kein IndexedDB'));
+    const r = indexedDB.open('eisenbuch', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function idbSet(json){
+  return idbOpen().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('kv','readwrite');
+    tx.objectStore('kv').put(json, 'state');
+    tx.oncomplete = () => { db.close(); res(); };
+    tx.onerror = () => { const e = tx.error; db.close(); rej(e); };
+  }));
+}
+function idbGet(){
+  return idbOpen().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('kv','readonly');
+    const rq = tx.objectStore('kv').get('state');
+    rq.onsuccess = () => { db.close(); res(rq.result || null); };
+    rq.onerror = () => { const e = rq.error; db.close(); rej(e); };
+  }));
+}
+
+/* Merker: welchen Stand dieses Fenster zuletzt gesehen hat (Schutz bei zwei offenen Fenstern) */
+let lastSeen = 0;
+function adoptState(other, notify){
+  state = migrate(other);
+  lastSeen = (state.meta && state.meta.updatedAt) || 0;
+  renderBanner(); renderCurrentView(); renderTimer();
+  if (notify) toast('Neuere Daten aus anderem Fenster übernommen');
+}
+function checkForNewer(){
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const other = JSON.parse(raw);
+    if (((other.meta && other.meta.updatedAt) || 0) > lastSeen){ adoptState(other, true); return true; }
+  } catch (e) {}
+  return false;
+}
+function save(){
+  /* Hat ein anderes Fenster inzwischen neuer gespeichert? Dann dessen Stand übernehmen statt ihn zu überschreiben. */
+  if (checkForNewer()) return;
+  state.meta.updatedAt = Date.now();
+  lastSeen = state.meta.updatedAt;
+  const json = JSON.stringify(state);
+  try { localStorage.setItem(LS_KEY, json); lsOK = true; }
+  catch (e) { lsOK = false; }
+  idbSet(json).then(() => { if (idbOK !== true){ idbOK = true; renderBanner(); } })
+              .catch(() => { if (idbOK !== false){ idbOK = false; renderBanner(); } });
+}
+const saveSoon = debounce(save, 500);
+
+async function loadState(){
+  lsOK = lsProbe();
+  let a = null, b = null;
+  try { a = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) {}
+  try { b = JSON.parse(await idbGet() || 'null'); idbOK = true; } catch (e) { idbOK = false; }
+  let chosen = null;
+  if (a && b) chosen = ((a.meta && a.meta.updatedAt) || 0) >= ((b.meta && b.meta.updatedAt) || 0) ? a : b;
+  else chosen = a || b;
+  if (chosen){ state = migrate(chosen); lastSeen = (state.meta && state.meta.updatedAt) || 0; }
+  else { state = defaultState(); seedExercises(state); save(); }
+}
+/* Anderes Fenster hat gespeichert → sofort übernehmen */
+window.addEventListener('storage', e => {
+  if (e.key !== LS_KEY || !e.newValue) return;
+  try {
+    const other = JSON.parse(e.newValue);
+    if (((other.meta && other.meta.updatedAt) || 0) > lastSeen) adoptState(other, false);
+  } catch (err) {}
+});
+/* Beim Verlassen/Backgrounden sofort speichern, damit zuletzt Getipptes nicht verloren geht */
+window.addEventListener('pagehide', () => { try { save(); } catch (e) {} });
+
+/* ---------- Abfragen auf den Daten ---------- */
+const exById = id => state.exercises.find(e => e.id === id) || null;
+const activeWorkout = () => state.workouts.find(w => w.id === state.activeWorkoutId) || null;
+function sortedWorkouts(){
+  return [...state.workouts].sort((x, y) =>
+    x.date < y.date ? -1 : x.date > y.date ? 1 : (x.startedAt || 0) - (y.startedAt || 0));
+}
+const validSets = entry => entry.sets.filter(s => s.r !== null && s.r > 0 && s.w !== null);
+function workoutStats(w){
+  let sets = 0, vol = 0, exn = 0;
+  for (const en of w.entries){
+    const vs = validSets(en);
+    if (vs.length) exn++;
+    sets += vs.length;
+    for (const s of vs) vol += s.w * s.r;
+  }
+  return { sets, vol, exn };
+}
+function sessionMetrics(w, exId){
+  let best = null, bestReps = null, e1 = null, vol = 0, reps = null, n = 0;
+  for (const en of w.entries){
+    if (en.exerciseId !== exId) continue;
+    for (const s of validSets(en)){
+      n++;
+      vol += s.w * s.r;
+      if (best === null || s.w > best || (s.w === best && s.r > bestReps)){ best = s.w; bestReps = s.r; }
+      const est = s.r === 1 ? s.w : s.w * (1 + s.r / 30);
+      if (e1 === null || est > e1) e1 = est;
+      if (reps === null || s.r > reps) reps = s.r;
+    }
+  }
+  return n ? { best, bestReps, e1: Math.round(e1 * 10) / 10, vol, reps, n } : null;
+}
+/* alle gültigen Sätze einer Übung in einem Workout (auch über doppelte Einträge) */
+function setsOf(wo, exId){
+  const out = [];
+  for (const en of wo.entries) if (en.exerciseId === exId) out.push(...validSets(en));
+  return out;
+}
+/* letzte frühere Einheit mit dieser Übung (vor dem Workout wo; nur beendete Trainings) */
+function prevSession(exId, wo){
+  const list = sortedWorkouts();
+  let idx = list.findIndex(w => w.id === wo.id);
+  if (idx === -1) idx = list.length;
+  for (let i = idx - 1; i >= 0; i--){
+    if (!list[i].finishedAt) continue;
+    const sets = setsOf(list[i], exId);
+    if (sets.length) return { date: list[i].date, sets };
+  }
+  return null;
+}
+/* Kennzahlen der letzten früheren Einheit dieser Übung (nur beendete Trainings) */
+function prevWorkoutWith(exId, wo){
+  const list = sortedWorkouts();
+  let idx = list.findIndex(w => w.id === wo.id);
+  if (idx === -1) idx = list.length;
+  for (let i = idx - 1; i >= 0; i--){
+    if (!list[i].finishedAt) continue;
+    const m = sessionMetrics(list[i], exId);
+    if (m) return { date: list[i].date, m };
+  }
+  return null;
+}
+/* Rekord VOR diesem Workout (für „Neuer Rekord!"; nur beendete Trainings) */
+function recordBefore(exId, wo){
+  const list = sortedWorkouts();
+  let idx = list.findIndex(w => w.id === wo.id);
+  if (idx === -1) idx = list.length;
+  let rec = null;
+  for (let i = 0; i < idx; i++){
+    if (!list[i].finishedAt) continue;
+    for (const s of setsOf(list[i], exId))
+      if (!rec || s.w > rec.w || (s.w === rec.w && s.r > rec.r))
+        rec = { w: s.w, r: s.r, date: list[i].date };
+  }
+  return rec;
+}
+/* Steigerungs-Anzeige: vergleicht die geschätzte Maximalkraft mit der letzten Einheit */
+function progressChip(wo, exId){
+  const m = sessionMetrics(wo, exId);
+  if (!m) return null;
+  const prev = prevWorkoutWith(exId, wo);
+  if (!prev) return el('span', { class: 'chip' }, 'erstes Mal');
+  const d = m.e1 - prev.m.e1;
+  if (d > 0.05)  return el('span', { class: 'chip up' }, '▲ +' + fmtNum(d) + ' kg');
+  if (d < -0.05) return el('span', { class: 'chip down' }, '▼ ' + fmtNum(d) + ' kg');
+  return el('span', { class: 'chip' }, '= gehalten');
+}
+function lastUsedMap(){
+  const m = new Map();
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    for (const en of w.entries)
+      if (validSets(en).length) m.set(en.exerciseId, w.date);
+  }
+  return m;
+}
+function exerciseRecord(exId){
+  let rec = null;
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    for (const en of w.entries){
+      if (en.exerciseId !== exId) continue;
+      for (const s of validSets(en))
+        if (!rec || s.w > rec.w || (s.w === rec.w && s.r > rec.r))
+          rec = { w: s.w, r: s.r, date: w.date };
+    }
+  }
+  return rec;
+}
+const finishedCount = () => state.workouts.filter(w => w.finishedAt).length;
+
+/* ---------- Audio / Vibration / Bildschirm ---------- */
+let actx = null;
+function unlockAudio(){
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+  } catch (e) {}
+}
+/* pointerup/click zählen (anders als pointerdown) auf dem iPhone sicher als Nutzer-Geste */
+document.addEventListener('pointerdown', unlockAudio, { passive: true });
+document.addEventListener('pointerup', unlockAudio, { passive: true });
+document.addEventListener('touchend', unlockAudio, { passive: true });
+document.addEventListener('click', unlockAudio, { passive: true });
+function beep(){
+  if (!state.settings.sound || !actx || actx.state !== 'running') return;
+  const t0 = actx.currentTime;
+  [0, .22, .44].forEach((off, i) => {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = i === 2 ? 1175 : 880;
+    g.gain.setValueAtTime(0.0001, t0 + off);
+    g.gain.exponentialRampToValueAtTime(0.25, t0 + off + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.18);
+    o.connect(g).connect(actx.destination);
+    o.start(t0 + off); o.stop(t0 + off + 0.2);
+  });
+}
+function vib(pattern){
+  if (state.settings.vibrate && navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+}
+let wakeLock = null;
+async function syncWakeLock(){
+  const want = state.settings.wakeLock && !!state.activeWorkoutId && document.visibilityState === 'visible';
+  if (want && !wakeLock && 'wakeLock' in navigator){
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (e) { wakeLock = null; }
+  } else if (!want && wakeLock){
+    try { wakeLock.release(); } catch (e) {}
+    wakeLock = null;
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  syncWakeLock();
+  if (document.visibilityState === 'hidden') save();
+  else checkForNewer();
+});
+
+/* ---------- Pausen-Timer ---------- */
+let tickInt = null;
+function startRest(sec, label){
+  state.timer = { endAt: Date.now() + sec * 1000, totalSec: sec, label, doneFlag: false };
+  save(); renderTimer();
+}
+function stopTimer(){ state.timer = null; save(); renderTimer(); }
+function renderTimer(){
+  const dock = $('#timerdock');
+  const t = state.timer;
+  if (!t){ dock.classList.remove('show','over'); if (tickInt){ clearInterval(tickInt); tickInt = null; } return; }
+  dock.classList.add('show');
+  if (!tickInt) tickInt = setInterval(timerTick, 250);
+  timerTick();
+}
+function timerTick(){
+  const t = state.timer;
+  if (!t) { renderTimer(); return; }
+  const dock = $('#timerdock');
+  const rem = Math.ceil((t.endAt - Date.now()) / 1000);
+  $('#tlabel').textContent = t.label ? 'Pause · ' + t.label : 'Pause';
+  if (rem <= 0){
+    if (!t.doneFlag){ t.doneFlag = true; save(); beep(); vib([200, 90, 200]); }
+    dock.classList.add('over');
+    $('#ttime').textContent = 'Pause vorbei — weiter geht\'s!';
+    $('#tprog').style.width = '100%';
+    if (Date.now() - t.endAt > 6000) stopTimer();
+  } else {
+    dock.classList.remove('over');
+    $('#ttime').textContent = fmtClock(rem);
+    $('#tprog').style.width = Math.max(0, Math.min(100, 100 * (1 - rem / t.totalSec))) + '%';
+  }
+}
+$('#tplus').addEventListener('click', () => {
+  const t = state.timer; if (!t) return;
+  t.endAt += 15000; t.totalSec += 15; t.doneFlag = false; save(); timerTick();
+});
+$('#tminus').addEventListener('click', () => {
+  const t = state.timer; if (!t) return;
+  t.endAt -= 15000; save(); timerTick();
+});
+$('#tskip').addEventListener('click', stopTimer);
+
+/* ---------- UI-Grundbausteine ---------- */
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2300);
+}
+function openSheet(title, buildContent){
+  const host = $('#sheets');
+  const back = el('div', { class: 'backdrop' });
+  const inner = el('div', { class: 'sheetin' });
+  const sheet = el('div', { class: 'sheet', role: 'dialog', 'aria-label': title }, inner);
+  /* Fenster über Fenster: jedes neue Paar liegt über allen älteren */
+  const depth = host.querySelectorAll('.sheet').length;
+  back.style.zIndex = String(60 + 2 * depth);
+  sheet.style.zIndex = String(61 + 2 * depth);
+  function close(){ back.remove(); sheet.remove(); }
+  back.addEventListener('click', close);
+  inner.append(
+    el('div', { class: 'grab' }),
+    el('div', { class: 'shead' },
+      el('div', { class: 't' }, title),
+      el('button', { class: 'iconbtn', 'aria-label': 'Schließen', onclick: close }, '✕')),
+  );
+  const body = el('div');
+  inner.append(body);
+  host.append(back, sheet);
+  buildContent(body, close);
+  return close;
+}
+function confirmDlg(msg, { okLabel = 'Ja', danger = false } = {}){
+  return new Promise(res => {
+    const wrap = el('div', { class: 'cwrap' });
+    function done(v){ wrap.remove(); res(v); }
+    wrap.append(el('div', { class: 'cbox' },
+      el('div', { class: 'm' }, msg),
+      el('div', { class: 'a' },
+        el('button', { class: 'btn', onclick: () => done(false) }, 'Abbrechen'),
+        el('button', { class: 'btn ' + (danger ? 'danger' : 'primary'), onclick: () => done(true) }, okLabel)),
+    ));
+    wrap.addEventListener('click', e => { if (e.target === wrap) done(false); });
+    document.body.append(wrap);
+  });
+}
+/* Dialog mit mehreren Wahlmöglichkeiten (untereinander) */
+function choiceDlg(msg, choices){
+  return new Promise(res => {
+    const wrap = el('div', { class: 'cwrap' });
+    function done(v){ wrap.remove(); res(v); }
+    wrap.append(el('div', { class: 'cbox' },
+      el('div', { class: 'm' }, msg),
+      el('div', { class: 'a', style: 'flex-direction:column' },
+        choices.map(c => el('button', { class: 'btn ' + (c.cls || ''), onclick: () => done(c.value) }, c.label)))));
+    wrap.addEventListener('click', e => { if (e.target === wrap) done(null); });
+    document.body.append(wrap);
+  });
+}
+
+/* ---------- Banner (Speicherwarnung, Sicherungs-Hinweis, Willkommen) ---------- */
+function renderBanner(){
+  const host = $('#banner');
+  host.innerHTML = '';
+  if (!lsOK && idbOK === false){
+    host.append(el('div', { class: 'banner danger' },
+      el('b', {}, 'Achtung: Der Browser blockiert das Speichern. '),
+      'Deine Eingaben gehen beim Schließen verloren. Bitte sichere über Einstellungen → „Daten sichern".'));
+    return;
+  }
+  if (!state.ui.welcomeDismissed){
+    host.append(el('div', { class: 'banner' },
+      el('b', {}, 'Willkommen im Eisenbuch! '),
+      'Unten auf „Training starten" tippen, Übungen hinzufügen und jeden Satz mit dem Haken abschließen — der Pausen-Timer startet automatisch. ',
+      'Deine Daten bleiben nur auf diesem Gerät: ab und zu über das Zahnrad sichern.',
+      el('div', { class: 'bact' },
+        el('button', { class: 'btn small', onclick: () => { state.ui.welcomeDismissed = true; save(); renderBanner(); } }, 'Alles klar'))));
+    return;
+  }
+  const since = finishedCount() - (state.meta.workoutsAtBackup || 0);
+  if (!backupHintDismissed && finishedCount() > 0 && since >= 6){
+    host.append(el('div', { class: 'banner' },
+      el('b', {}, 'Sicherung empfohlen: '),
+      state.meta.lastBackupAt
+        ? `Seit der letzten Sicherung sind ${since} Trainings dazugekommen.`
+        : 'Deine Trainings sind noch nie gesichert worden.',
+      el('div', { class: 'bact' },
+        el('button', { class: 'btn small primary', onclick: exportData }, 'Jetzt sichern'),
+        el('button', { class: 'btn small ghost', onclick: () => { backupHintDismissed = true; renderBanner(); } }, 'Später'))));
+  }
+}
+
+/* ---------- Navigation ---------- */
+const TABS = [
+  ['training', 'Training', IC.training],
+  ['uebungen', 'Übungen', IC.uebungen],
+  ['verlauf', 'Verlauf', IC.verlauf],
+  ['statistik', 'Statistik', IC.statistik],
+];
+function buildTabs(){
+  const bar = $('#tabbar');
+  for (const [key, label, icon] of TABS){
+    bar.append(el('button', { class: 'tab', id: 'tab-' + key, onclick: () => showView(key) },
+      el('span', { html: icon }), label));
+  }
+}
+function showView(v){
+  curView = v;
+  for (const [key] of TABS){
+    $('#view-' + key).classList.toggle('hidden', key !== v);
+    $('#tab-' + key).classList.toggle('on', key === v);
+  }
+  renderCurrentView();
+  window.scrollTo(0, 0);
+}
+function renderCurrentView(){
+  if (curView === 'training') renderTraining();
+  else if (curView === 'uebungen') renderUebungen();
+  else if (curView === 'verlauf') renderVerlauf();
+  else if (curView === 'statistik') renderStatistik();
+}
+
+/* =========================================================================
+   Ansicht: TRAINING
+   ========================================================================= */
+function renderTraining(){
+  const host = $('#view-training');
+  host.innerHTML = '';
+  const wo = activeWorkout();
+  if (!wo){ renderTrainingStart(host); return; }
+  renderWorkoutEditor(host, wo, { live: true });
+}
+function renderTrainingStart(host){
+  const today = dateKey(new Date());
+  host.append(el('div', { class: 'h1' }, 'Heute'), el('div', { class: 'sub' }, fmtDay(today)));
+
+  /* Diese Woche */
+  const mon = dateKey(mondayOf(new Date()));
+  let wk = 0, wkVol = 0;
+  for (const w of state.workouts){
+    if (w.date >= mon && w.finishedAt){ wk++; wkVol += workoutStats(w).vol; }
+  }
+  if (wk > 0){
+    host.append(el('div', { class: 'sub', style: 'margin-top:6px' },
+      `Diese Woche: ${wk} Training${wk === 1 ? '' : 's'} · ${fmtNum(wkVol, 0)} kg bewegt`));
+  }
+
+  const card = el('div', { class: 'card' });
+  card.append(el('button', { class: 'btn primary block', onclick: () => startWorkout(null) },
+    el('span', { html: IC.plus }), 'Training starten'));
+  const last = [...sortedWorkouts()].reverse().find(w => w.finishedAt);
+  if (last){
+    const st = workoutStats(last);
+    card.append(el('button', { class: 'btn block', style: 'margin-top:8px',
+      onclick: () => startWorkout(last.id) },
+      `Letztes Training wiederholen (${fmtShort(last.date)} · ${plural(st.exn, 'Übung', 'Übungen')})`));
+  } else {
+    card.append(el('button', { class: 'btn ghost block', style: 'margin-top:8px;color:var(--muted)',
+      onclick: openImport }, 'Sicherung wiederherstellen …'));
+  }
+  host.append(card);
+
+  /* unfertiges Training von früher? */
+  const stale = state.workouts.find(w => !w.finishedAt && w.id !== state.activeWorkoutId);
+  if (stale){
+    host.append(el('div', { class: 'banner' },
+      `Ein Training vom ${fmtFull(stale.date)} wurde nie beendet.`,
+      el('div', { class: 'bact' },
+        el('button', { class: 'btn small', onclick: () => { state.activeWorkoutId = stale.id; save(); renderTraining(); } }, 'Fortsetzen'),
+        el('button', { class: 'btn small danger', onclick: async () => {
+          if (await confirmDlg('Dieses angefangene Training löschen?', { okLabel: 'Löschen', danger: true })){
+            state.workouts = state.workouts.filter(w => w.id !== stale.id);
+            save(); renderTraining();
+          }
+        } }, 'Verwerfen'))));
+  }
+
+  /* letzte Trainings kurz */
+  const recent = [...sortedWorkouts()].reverse().filter(w => w.finishedAt).slice(0, 3);
+  if (recent.length){
+    host.append(el('div', { class: 'h2' }, 'Zuletzt'));
+    const c = el('div', { class: 'card', style: 'padding:2px 12px' });
+    for (const w of recent){
+      const st = workoutStats(w);
+      const names = w.entries.map(en => exById(en.exerciseId)?.name).filter(Boolean).slice(0, 3).join(', ');
+      c.append(el('button', { class: 'li', onclick: () => { showView('verlauf'); } },
+        el('div', { class: 'datebox' }, el('b', {}, w.date.slice(8, 10)), el('span', {}, WD[parseKey(w.date).getDay()])),
+        el('div', { class: 'grow' },
+          el('div', { class: 't' }, names || 'Training'),
+          el('div', { class: 's' }, `${plural(st.sets, 'Satz', 'Sätze')} · ${fmtNum(st.vol, 0)} kg`))));
+    }
+    host.append(c);
+  }
+}
+function startWorkout(templateId){
+  const wo = {
+    id: uid(), date: dateKey(new Date()), startedAt: Date.now(), finishedAt: null,
+    note: '', entries: [],
+  };
+  if (templateId){
+    const tpl = state.workouts.find(w => w.id === templateId);
+    if (tpl){
+      wo.entries = tpl.entries.map(en => ({
+        id: uid(), exerciseId: en.exerciseId, note: '',
+        sets: validSets(en).map(s => ({ id: uid(), w: s.w, r: s.r, done: false, ts: null })),
+      })).filter(en => exById(en.exerciseId));
+    }
+  }
+  state.workouts.push(wo);
+  state.activeWorkoutId = wo.id;
+  save(); syncWakeLock(); renderTraining();
+  if (!templateId) openExercisePicker(wo);
+}
+
+/* Der Workout-Editor — für das laufende Training UND fürs Bearbeiten alter Trainings */
+function renderWorkoutEditor(host, wo, { live }){
+  const refresh = () => { host.innerHTML = ''; renderWorkoutEditor(host, wo, { live }); };
+  if (live){
+    host.append(el('div', { class: 'h1' }, 'Training läuft'),
+      el('div', { class: 'sub' }, fmtDay(wo.date) + trainDuration(wo)));
+  }
+  for (const entry of wo.entries) host.append(entryCard(wo, entry, live, refresh));
+
+  host.append(el('button', { class: 'btn block', style: 'margin-top:12px', onclick: () => openExercisePicker(wo, refresh) },
+    el('span', { html: IC.plus }), 'Übung hinzufügen'));
+
+  const noteIn = el('input', { class: 'in', style: 'margin-top:10px', placeholder: 'Notiz zum Training (z. B. Form, Schlaf, Energie) …',
+    value: wo.note || '', oninput: e => { wo.note = e.target.value; saveSoon(); } });
+  host.append(noteIn);
+
+  if (live){
+    host.append(el('button', { class: 'btn primary block', style: 'margin-top:12px', onclick: () => finishWorkout(wo) },
+      'Training beenden'));
+    host.append(el('button', { class: 'btn ghost block danger', style: 'margin-top:8px', onclick: async () => {
+      if (await confirmDlg('Training abbrechen und löschen?', { okLabel: 'Verwerfen', danger: true })){
+        state.workouts = state.workouts.filter(w => w.id !== wo.id);
+        state.activeWorkoutId = null;
+        stopTimer(); save(); syncWakeLock(); renderTraining();
+      }
+    } }, 'Training verwerfen'));
+  }
+}
+function trainDuration(wo){
+  if (!wo.startedAt) return '';
+  const min = Math.round((Date.now() - wo.startedAt) / 60000);
+  return min >= 1 ? ` · seit ${min} min` : '';
+}
+function entryCard(wo, entry, live, refresh){
+  const ex = exById(entry.exerciseId);
+  const card = el('div', { class: 'card entry' });
+  const prev = ex ? prevSession(ex.id, wo) : null;
+
+  const restChip = el('button', { class: 'chip acc', onclick: () => ex && openExerciseEditor(ex.id),
+    'aria-label': 'Pausenzeit dieser Übung' }, '⏱ ' + restFor(entry) + ' s');
+  card.append(el('div', { class: 'row' },
+    el('div', { class: 'grow' },
+      el('button', { class: 'ename', style: 'text-align:left', onclick: () => ex && openExerciseEditor(ex.id) },
+        ex ? ex.name : '(gelöschte Übung)'),
+      ex && ex.notes ? el('div', { class: 'enote' }, ex.notes) : null),
+    restChip,
+    el('button', { class: 'del', style: 'width:30px;height:30px;color:var(--muted)', 'aria-label': 'Übung entfernen',
+      onclick: async () => {
+        const hasData = validSets(entry).length > 0;
+        if (!hasData || await confirmDlg(`„${ex ? ex.name : 'Übung'}" samt Sätzen aus diesem Training entfernen?`, { okLabel: 'Entfernen', danger: true })){
+          wo.entries = wo.entries.filter(e2 => e2.id !== entry.id);
+          save(); refresh();
+        }
+      } }, '✕')));
+
+  if (prev){
+    card.append(el('div', { class: 'prev' },
+      'Letztes Mal (' + fmtShort(prev.date) + '): ' +
+      prev.sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ')));
+  }
+
+  card.append(el('div', { class: 'sethead' },
+    el('span', {}, 'Satz'), el('span', {}, 'kg'), el('span', {}, 'Wdh.'), el('span', {}, '✓'), el('span', {}, '')));
+
+  entry.sets.forEach((s, i) => card.append(setRow(wo, entry, s, i, live, prev, refresh)));
+
+  const noteIn = el('input', { class: 'in grow', placeholder: 'Notiz (z. B. „letzter Satz schwer") …',
+    value: entry.note || '', oninput: e => { entry.note = e.target.value; saveSoon(); } });
+  card.append(el('div', { class: 'entryfoot' },
+    el('button', { class: 'btn small', onclick: () => {
+      const last = entry.sets[entry.sets.length - 1];
+      const pv = prev && prev.sets[entry.sets.length];
+      entry.sets.push({ id: uid(),
+        w: last && last.w !== null ? last.w : (pv ? pv.w : null),
+        r: last && last.r !== null ? last.r : (pv ? pv.r : null),
+        done: false, ts: null });
+      save(); refresh();
+    } }, el('span', { html: IC.plus }), 'Satz'),
+    noteIn));
+  return card;
+}
+function restFor(entry){
+  const ex = exById(entry.exerciseId);
+  return (ex && ex.restSec) || state.settings.restSec;
+}
+function setRow(wo, entry, s, i, live, prev, refresh){
+  const pv = prev ? prev.sets[i] : null;
+  const row = el('div', { class: 'set' + (s.done ? ' done' : '') });
+  const wIn = el('input', { class: 'in', inputmode: 'decimal', autocomplete: 'off', enterkeyhint: 'next',
+    value: fmtInput(s.w), placeholder: pv ? fmtInput(pv.w) : 'kg',
+    oninput: e => { s.w = parseNum(e.target.value); e.target.classList.remove('err'); saveSoon(); } });
+  const rIn = el('input', { class: 'in', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'done',
+    value: s.r === null || s.r === undefined ? '' : String(s.r), placeholder: pv ? String(pv.r) : 'Wdh.',
+    oninput: e => { s.r = parseInt0(e.target.value); e.target.classList.remove('err'); saveSoon(); } });
+  const chk = el('button', { class: 'chk', html: IC.check, 'aria-label': 'Satz abhaken' });
+  chk.addEventListener('click', () => {
+    if (!s.done){
+      if (s.w === null && pv){ s.w = pv.w; wIn.value = fmtInput(pv.w); }
+      if ((s.r === null || s.r <= 0) && pv){ s.r = pv.r; rIn.value = String(pv.r); }
+      let bad = false;
+      if (s.w === null){ wIn.classList.add('err'); bad = true; }
+      if (s.r === null || s.r <= 0){ rIn.classList.add('err'); bad = true; }
+      if (bad){ toast('Bitte Gewicht und Wiederholungen eintragen'); return; }
+      s.done = true; s.ts = Date.now();
+      row.classList.add('done');
+      if (live) startRest(restFor(entry), exById(entry.exerciseId)?.name || '');
+      vib(30);
+    } else {
+      s.done = false;
+      row.classList.remove('done');
+    }
+    save();
+  });
+  row.append(
+    el('span', { class: 'idx' }, String(i + 1)),
+    wIn, rIn, chk,
+    el('button', { class: 'del', 'aria-label': 'Satz löschen', onclick: async () => {
+      if ((s.done || s.w !== null || s.r !== null) &&
+          !await confirmDlg('Diesen Satz löschen?', { okLabel: 'Löschen', danger: true })) return;
+      entry.sets = entry.sets.filter(x => x.id !== s.id);
+      if (entry.sets.length === 0) entry.sets.push({ id: uid(), w: null, r: null, done: false, ts: null });
+      save(); refresh();
+    } }, '✕'));
+  return row;
+}
+async function finishWorkout(wo){
+  /* Erst prüfen, NICHTS verändern — Änderungen passieren nur nach Bestätigung. */
+  const plan = wo.entries.map(en => {
+    const valid = en.sets.filter(s => s.r !== null && s.r > 0 && s.w !== null);
+    return { en, valid, done: valid.filter(s => s.done) };
+  });
+  const validTotal = plan.reduce((n, p) => n + p.valid.length, 0);
+  if (validTotal === 0){
+    if (await confirmDlg('Keine Sätze eingetragen — Training verwerfen?', { okLabel: 'Verwerfen', danger: true })){
+      state.workouts = state.workouts.filter(w => w.id !== wo.id);
+      state.activeWorkoutId = null;
+      stopTimer(); save(); syncWakeLock(); renderTraining();
+    }
+    return;
+  }
+  const doneTotal = plan.reduce((n, p) => n + p.done.length, 0);
+  const undone = validTotal - doneTotal;
+  let useDoneOnly = false;
+  if (undone > 0){
+    const pick = await choiceDlg(
+      undone === 1
+        ? '1 Satz ist nicht abgehakt. Soll er trotzdem zählen?'
+        : `${undone} Sätze sind nicht abgehakt. Sollen sie trotzdem zählen?`,
+      [ { label: 'Mitzählen und beenden', value: 'all', cls: 'primary' },
+        { label: 'Weglassen und beenden', value: 'done' },
+        { label: 'Zurück zum Training', value: null } ]);
+    if (pick !== 'all' && pick !== 'done') return;
+    useDoneOnly = (pick === 'done');
+    if (useDoneOnly && doneTotal === 0){
+      toast('Kein Satz abgehakt — Training bleibt offen');
+      return;
+    }
+  } else {
+    let exn = 0, sets = 0, vol = 0;
+    for (const p of plan){
+      if (p.valid.length) exn++;
+      sets += p.valid.length;
+      for (const s of p.valid) vol += s.w * s.r;
+    }
+    if (!await confirmDlg(`Training beenden? ${plural(exn, 'Übung', 'Übungen')} · ${plural(sets, 'Satz', 'Sätze')} · ${fmtNum(vol, 0)} kg`, { okLabel: 'Beenden' }))
+      return;
+  }
+  /* Jetzt (und erst jetzt) aufräumen und abschließen */
+  for (const p of plan){
+    const keep = useDoneOnly ? p.done : p.valid;
+    for (const s of keep) s.done = true;
+    p.en.sets = keep;
+  }
+  wo.entries = plan.filter(p => p.en.sets.length > 0).map(p => p.en);
+  wo.finishedAt = Date.now();
+  state.activeWorkoutId = null;
+  stopTimer(); save(); syncWakeLock();
+  renderBanner(); renderTraining();
+  openWorkoutSummary(wo);
+}
+
+/* Auswertung nach dem Training: Steigerung je Übung gegenüber dem letzten Mal */
+function openWorkoutSummary(wo){
+  openSheet('Training gespeichert', (body, close) => {
+    const st = workoutStats(wo);
+    body.append(el('div', { class: 'sub' },
+      `${fmtDay(wo.date)} · ${plural(st.exn, 'Übung', 'Übungen')} · ${plural(st.sets, 'Satz', 'Sätze')} · ${fmtNum(st.vol, 0)} kg bewegt`));
+    body.append(el('div', { class: 'h2' }, 'Deine Entwicklung je Übung'));
+    const seen = new Set();
+    for (const en of wo.entries){
+      if (seen.has(en.exerciseId)) continue;
+      seen.add(en.exerciseId);
+      const ex = exById(en.exerciseId);
+      const m = sessionMetrics(wo, en.exerciseId);
+      if (!ex || !m) continue;
+      const sets = setsOf(wo, en.exerciseId);
+      const prev = prevWorkoutWith(en.exerciseId, wo);
+      const prevSets = prevSession(en.exerciseId, wo);
+      const rec = recordBefore(en.exerciseId, wo);
+      const isPR = rec && m.best > rec.w;
+
+      const card = el('div', { class: 'card', style: 'padding:11px 12px' });
+      card.append(el('div', { class: 'row' },
+        el('div', { class: 'grow', style: 'font-weight:700' }, ex.name),
+        progressChip(wo, en.exerciseId)));
+      card.append(el('div', { class: 'sub', style: 'margin-top:5px' },
+        'Heute: ' + sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ') +
+        ' · ' + fmtNum(m.vol, 0) + ' kg'));
+      if (prev && prevSets){
+        const dVol = m.vol - prev.m.vol;
+        card.append(el('div', { class: 'sub', style: 'margin-top:2px' },
+          'Letztes Mal (' + fmtShort(prevSets.date) + '): ' +
+          prevSets.sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ') +
+          ' · ' + fmtNum(prev.m.vol, 0) + ' kg' +
+          (Math.abs(dVol) > 0.5 ? ' (Volumen ' + (dVol > 0 ? '+' : '') + fmtNum(dVol, 0) + ')' : '')));
+      } else {
+        card.append(el('div', { class: 'sub', style: 'margin-top:2px' },
+          'Zum ersten Mal trainiert — ab jetzt wird verglichen.'));
+      }
+      if (isPR) card.append(el('div', { style: 'margin-top:7px' },
+        el('span', { class: 'chip rec' }, 'Neuer Rekord: ' + fmtNum(m.best) + ' kg')));
+      body.append(card);
+    }
+    body.append(el('div', { class: 'sub', style: 'margin:8px 2px' },
+      'Der Pfeil vergleicht deine geschätzte Maximalkraft (aus Gewicht × Wiederholungen) mit der letzten Einheit derselben Übung.'));
+    body.append(el('button', { class: 'btn primary block', style: 'margin-top:8px', onclick: close }, 'Fertig'));
+    body.append(el('button', { class: 'btn ghost block', style: 'margin-top:8px;color:var(--muted)',
+      onclick: exportData }, 'Sicherung speichern …'));
+  });
+}
+
+/* Übungs-Auswahl fürs Training */
+function openExercisePicker(wo, refresh){
+  openSheet('Übung hinzufügen', (body, close) => {
+    const inWorkout = new Set(wo.entries.map(en => en.exerciseId));
+    const lu = lastUsedMap();
+    const search = el('input', { class: 'in', placeholder: 'Suchen oder neu anlegen …', autocomplete: 'off' });
+    const list = el('div', { class: 'card', style: 'padding:2px 12px' });
+    function renderList(){
+      const q = search.value.trim().toLowerCase();
+      list.innerHTML = '';
+      const items = state.exercises
+        .filter(e => !e.archived && (!q || e.name.toLowerCase().includes(q)))
+        .sort((a, b) => (lu.get(b.id) || '').localeCompare(lu.get(a.id) || '') || a.name.localeCompare(b.name, 'de'));
+      for (const ex of items){
+        const used = lu.get(ex.id);
+        const added = inWorkout.has(ex.id);
+        list.append(el('button', { class: 'li', onclick: () => { if (!added) addEntry(ex.id); } },
+          el('div', { class: 'grow' },
+            el('div', { class: 't', style: added ? 'color:var(--muted)' : '' }, ex.name),
+            el('div', { class: 's' }, added ? 'schon im Training' : (used ? 'Zuletzt: ' + fmtFull(used) : 'noch nie trainiert'))),
+          added ? el('span', { class: 'chip' }, '✓') : null));
+      }
+      if (q){
+        for (const arch of state.exercises.filter(e => e.archived && e.name.toLowerCase().includes(q))){
+          list.append(el('button', { class: 'li', onclick: () => {
+            arch.archived = false; save(); addEntry(arch.id);
+          } },
+            el('div', { class: 'grow' },
+              el('div', { class: 't' }, arch.name),
+              el('div', { class: 's' }, 'archiviert — antippen holt sie zurück'))));
+        }
+      }
+      if (q && !state.exercises.some(e => e.name.toLowerCase() === q)){
+        list.append(el('button', { class: 'li', onclick: () => {
+          const ex = { id: uid(), name: search.value.trim(), notes: '', restSec: null, archived: false, createdAt: Date.now() };
+          state.exercises.push(ex); save(); addEntry(ex.id);
+        } },
+          el('div', { class: 'grow' },
+            el('div', { class: 't', style: 'color:var(--accent)' }, `„${search.value.trim()}" neu anlegen`))));
+      }
+      if (!list.children.length)
+        list.append(el('div', { class: 'chart-empty' }, 'Nichts gefunden.'));
+    }
+    function addEntry(exId){
+      const prev = prevSession(exId, wo);
+      const sets = prev
+        ? prev.sets.map(s => ({ id: uid(), w: s.w, r: s.r, done: false, ts: null }))
+        : [{ id: uid(), w: null, r: null, done: false, ts: null }];
+      wo.entries.push({ id: uid(), exerciseId: exId, note: '', sets });
+      save(); close();
+      if (refresh) refresh(); else renderCurrentView();
+    }
+    search.addEventListener('input', renderList);
+    body.append(search, list);
+    renderList();
+    setTimeout(() => search.focus(), 60);
+  });
+}
+
+/* =========================================================================
+   Ansicht: ÜBUNGEN
+   ========================================================================= */
+function renderUebungen(){
+  const host = $('#view-uebungen');
+  host.innerHTML = '';
+  host.append(el('div', { class: 'h1' }, 'Übungen'));
+  const search = el('input', { class: 'in', placeholder: 'Übung suchen …', autocomplete: 'off' });
+  const addBtn = el('button', { class: 'btn primary block', style: 'margin-top:8px', onclick: () => openExerciseEditor(null) },
+    el('span', { html: IC.plus }), 'Neue Übung');
+  const list = el('div', { class: 'card', style: 'padding:2px 12px' });
+  const lu = lastUsedMap();
+  function renderList(){
+    const q = search.value.trim().toLowerCase();
+    list.innerHTML = '';
+    const items = state.exercises
+      .filter(e => !q || e.name.toLowerCase().includes(q))
+      .sort((a, b) => (a.archived ? 1 : 0) - (b.archived ? 1 : 0)
+        || (lu.get(b.id) || '').localeCompare(lu.get(a.id) || '')
+        || a.name.localeCompare(b.name, 'de'));
+    for (const ex of items){
+      const rec = exerciseRecord(ex.id);
+      const used = lu.get(ex.id);
+      const subs = [];
+      if (used) subs.push('Zuletzt: ' + fmtFull(used));
+      if (rec) subs.push('Rekord: ' + fmtNum(rec.w) + ' kg × ' + rec.r);
+      if (ex.archived) subs.push('archiviert');
+      list.append(el('button', { class: 'li', onclick: () => openExerciseEditor(ex.id),
+        style: ex.archived ? 'opacity:.55' : '' },
+        el('div', { class: 'grow' },
+          el('div', { class: 't' }, ex.name),
+          el('div', { class: 's' }, subs.join(' · ') || 'noch nie trainiert'))));
+    }
+    if (!items.length) list.append(el('div', { class: 'chart-empty' }, 'Keine Übungen gefunden.'));
+  }
+  search.addEventListener('input', renderList);
+  host.append(search, addBtn, list);
+  renderList();
+}
+function openExerciseEditor(exId){
+  const isNew = !exId;
+  const ex = isNew
+    ? { id: uid(), name: '', notes: '', restSec: null, archived: false, createdAt: Date.now() }
+    : exById(exId);
+  if (!ex) return;
+  openSheet(isNew ? 'Neue Übung' : ex.name, (body, close) => {
+    const nameIn = el('input', { class: 'in', value: ex.name, placeholder: 'z. B. Bankdrücken' });
+    const notesIn = el('textarea', { class: 'in', placeholder: 'Technik-Notizen, Sitz-Einstellungen, Griff …' });
+    notesIn.value = ex.notes || '';
+    const restIn = el('input', { class: 'in', inputmode: 'numeric', value: ex.restSec ?? '',
+      placeholder: 'Standard: ' + state.settings.restSec + ' s' });
+    body.append(
+      el('label', { class: 'f' }, el('span', {}, 'Name'), nameIn),
+      el('label', { class: 'f' }, el('span', {}, 'Notizen zur Übung (immer sichtbar)'), notesIn),
+      el('label', { class: 'f' }, el('span', {}, 'Pausenzeit in Sekunden (leer = Standard)'), restIn),
+    );
+    const rec = exerciseRecord(ex.id);
+    if (rec) body.append(el('div', { class: 'sub', style: 'margin-top:10px' },
+      `Rekord: ${fmtNum(rec.w)} kg × ${rec.r} (${fmtFull(rec.date)})`));
+
+    body.append(el('button', { class: 'btn primary block', style: 'margin-top:16px', onclick: () => {
+      const name = nameIn.value.trim();
+      if (!name){ nameIn.classList.add('err'); nameIn.focus(); return; }
+      ex.name = name;
+      ex.notes = notesIn.value.trim();
+      const rs = parseInt0(restIn.value);
+      ex.restSec = rs && rs > 0 ? rs : null;
+      if (isNew) state.exercises.push(ex);
+      save(); close(); renderCurrentView();
+    } }, 'Speichern'));
+
+    if (!isNew){
+      const used = state.workouts.some(w => w.entries.some(en => en.exerciseId === ex.id));
+      if (used){
+        body.append(el('button', { class: 'btn block', style: 'margin-top:8px', onclick: () => {
+          ex.archived = !ex.archived; save(); close(); renderCurrentView();
+        } }, ex.archived ? 'Aus Archiv holen' : 'Archivieren (aus Auswahl ausblenden)'));
+      } else {
+        body.append(el('button', { class: 'btn block danger', style: 'margin-top:8px', onclick: async () => {
+          if (await confirmDlg(`„${ex.name}" löschen?`, { okLabel: 'Löschen', danger: true })){
+            state.exercises = state.exercises.filter(e => e.id !== ex.id);
+            save(); close(); renderCurrentView();
+          }
+        } }, 'Löschen'));
+      }
+    }
+    if (isNew) setTimeout(() => nameIn.focus(), 60);
+  });
+}
+
+/* =========================================================================
+   Ansicht: VERLAUF
+   ========================================================================= */
+function renderVerlauf(){
+  const host = $('#view-verlauf');
+  host.innerHTML = '';
+  host.append(el('div', { class: 'h1' }, 'Verlauf'));
+  const list = [...sortedWorkouts()].reverse().filter(w => w.finishedAt || w.id === state.activeWorkoutId || workoutStats(w).sets > 0);
+  if (!list.length){
+    host.append(el('div', { class: 'card chart-empty' }, 'Noch keine Trainings. Leg auf dem Reiter „Training" los!'));
+    return;
+  }
+  let curMonth = '';
+  let monthCard = null;
+  for (const w of list){
+    const mk = w.date.slice(0, 7);
+    if (mk !== curMonth){
+      curMonth = mk;
+      host.append(el('div', { class: 'h2' }, MON[+mk.slice(5) - 1] + ' ' + mk.slice(0, 4)));
+      monthCard = el('div', { class: 'card', style: 'padding:2px 12px' });
+      host.append(monthCard);
+    }
+    const st = workoutStats(w);
+    const running = !w.finishedAt;
+    const row = el('button', { class: 'li', onclick: () => openWorkoutSheet(w.id) },
+      el('div', { class: 'datebox' },
+        el('b', {}, w.date.slice(8, 10)),
+        el('span', {}, WD[parseKey(w.date).getDay()])),
+      el('div', { class: 'grow' },
+        el('div', { class: 't' }, `${plural(st.exn, 'Übung', 'Übungen')} · ${plural(st.sets, 'Satz', 'Sätze')}` + (running ? ' · läuft' : '')),
+        el('div', { class: 's' }, fmtNum(st.vol, 0) + ' kg' + (w.note ? ' · ' + w.note : ''))));
+    monthCard.append(row);
+  }
+}
+function openWorkoutSheet(woId){
+  const w = state.workouts.find(x => x.id === woId);
+  if (!w) return;
+  openSheet('Training vom ' + fmtFull(w.date), (body, close) => {
+    const st = workoutStats(w);
+    body.append(el('div', { class: 'sub' }, `${plural(st.exn, 'Übung', 'Übungen')} · ${plural(st.sets, 'Satz', 'Sätze')} · ${fmtNum(st.vol, 0)} kg` +
+      (w.note ? ' · ' + w.note : '')));
+    for (const en of w.entries){
+      const ex = exById(en.exerciseId);
+      const vs = validSets(en);
+      body.append(el('div', { class: 'card', style: 'padding:10px 12px' },
+        el('div', { class: 'row' },
+          el('div', { class: 'grow', style: 'font-weight:700' }, ex ? ex.name : '(gelöschte Übung)'),
+          progressChip(w, en.exerciseId)),
+        el('div', { class: 'sub', style: 'margin-top:4px' },
+          vs.length ? vs.map(s => fmtNum(s.w) + '×' + s.r).join(' · ') : 'keine Sätze'),
+        en.note ? el('div', { class: 'sub', style: 'margin-top:4px;font-style:italic' }, '„' + en.note + '"') : null));
+    }
+    const actions = el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:14px' });
+    if (!w.finishedAt){
+      actions.append(el('button', { class: 'btn primary block', onclick: () => {
+        state.activeWorkoutId = w.id; save(); close(); showView('training');
+      } }, 'Fortsetzen'));
+    } else {
+      actions.append(el('button', { class: 'btn block', onclick: () => {
+        close();
+        openSheet('Training vom ' + fmtFull(w.date) + ' bearbeiten', (b2) => {
+          renderWorkoutEditor(b2, w, { live: false });
+        });
+      } }, 'Bearbeiten'));
+      if (!state.activeWorkoutId){
+        actions.append(el('button', { class: 'btn block', onclick: () => {
+          startWorkout(w.id); close(); showView('training');
+        } }, 'Als Vorlage für heute'));
+      }
+    }
+    actions.append(el('button', { class: 'btn block danger', onclick: async () => {
+      if (await confirmDlg('Dieses Training endgültig löschen?', { okLabel: 'Löschen', danger: true })){
+        state.workouts = state.workouts.filter(x => x.id !== w.id);
+        if (state.activeWorkoutId === w.id) state.activeWorkoutId = null;
+        save(); close(); renderCurrentView();
+      }
+    } }, 'Training löschen'));
+    body.append(actions);
+  });
+}
+
+/* =========================================================================
+   Ansicht: STATISTIK
+   ========================================================================= */
+const METRICS = {
+  best: { label: 'Gewicht', unit: 'kg', get: m => m.best, fmt: v => fmtNum(v) },
+  e1:   { label: 'e1RM',    unit: 'kg', get: m => m.e1,   fmt: v => fmtNum(v) },
+  vol:  { label: 'Volumen', unit: 'kg', get: m => m.vol,  fmt: v => fmtNum(v, 0) },
+  reps: { label: 'Wdh.',    unit: '',   get: m => m.reps, fmt: v => fmtNum(v, 0) },
+};
+function renderStatistik(){
+  const host = $('#view-statistik');
+  host.innerHTML = '';
+  host.append(el('div', { class: 'h1' }, 'Statistik'));
+
+  /* Filterzeile: Übung + Zeitraum (gilt für alles darunter) */
+  const usedIds = new Set();
+  for (const w of state.workouts){
+    if (!w.finishedAt) continue;
+    for (const en of w.entries) if (validSets(en).length) usedIds.add(en.exerciseId);
+  }
+  const exOpts = state.exercises.filter(e => usedIds.has(e.id))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const sel = el('select', { class: 'in', 'aria-label': 'Übung wählen' },
+    el('option', { value: 'all' }, 'Alle Übungen (Überblick)'),
+    exOpts.map(e => {
+      const o = el('option', { value: e.id }, e.name);
+      return o;
+    }));
+  sel.value = (state.ui.statsExercise === 'all' || usedIds.has(state.ui.statsExercise)) ? state.ui.statsExercise : 'all';
+  sel.addEventListener('change', () => { state.ui.statsExercise = sel.value; save(); renderStatistik(); });
+
+  const ranges = [[30, '30 Tage'], [90, '90 Tage'], [365, '1 Jahr'], [0, 'Alles']];
+  const seg = el('div', { class: 'seg' }, ranges.map(([d, lab]) =>
+    el('button', { class: state.ui.statsRange === d ? 'on' : '', onclick: () => {
+      state.ui.statsRange = d; save(); renderStatistik();
+    } }, lab)));
+  host.append(el('div', { class: 'filters' }, sel, seg));
+
+  const cutoff = state.ui.statsRange ? dateKey(new Date(Date.now() - state.ui.statsRange * 864e5)) : null;
+
+  if (sel.value === 'all') renderStatsOverview(host, cutoff);
+  else renderStatsExercise(host, sel.value, cutoff);
+}
+
+function renderStatsOverview(host, cutoff){
+  const wos = sortedWorkouts().filter(w => w.finishedAt && (!cutoff || w.date >= cutoff) && workoutStats(w).sets > 0);
+  let vol = 0, sets = 0;
+  for (const w of wos){ const st = workoutStats(w); vol += st.vol; sets += st.sets; }
+  host.append(el('div', { class: 'tiles' },
+    tile('Trainings', String(wos.length), ''),
+    tile('Sätze', fmtNum(sets, 0), ''),
+    tile('Volumen', fmtNum(vol, 0), 'kg gesamt')));
+
+  /* Wochen-Volumen als Balken */
+  host.append(el('div', { class: 'h2' }, 'Volumen pro Woche'));
+  const card = el('div', { class: 'card' });
+  host.append(card);
+  if (!wos.length){
+    card.append(el('div', { class: 'chart-empty' }, 'Noch keine Daten im Zeitraum.'));
+    return;
+  }
+  const weeks = new Map();
+  const first = mondayOf(parseKey(wos[0].date));
+  const lastMon = mondayOf(new Date());
+  for (let t = new Date(first); t <= lastMon; t.setDate(t.getDate() + 7))
+    weeks.set(dateKey(t), 0);
+  for (const w of wos){
+    const wk = dateKey(mondayOf(parseKey(w.date)));
+    weeks.set(wk, (weeks.get(wk) || 0) + workoutStats(w).vol);
+  }
+  let bars = [...weeks.entries()].map(([wk, v]) => ({
+    label: 'KW ' + isoWeek(parseKey(wk)), key: wk, value: v }));
+  if (bars.length > 26) bars = bars.slice(-26);
+  drawBarChart(card, bars, { unit: 'kg' });
+  host.append(el('div', { class: 'sub', style: 'margin:2px 4px' },
+    'Volumen = Gewicht × Wiederholungen, über alle Sätze zusammengezählt.'));
+
+  /* Tabelle der Trainings */
+  host.append(el('div', { class: 'h2' }, 'Alle Trainings im Zeitraum'));
+  const tcard = el('div', { class: 'card', style: 'overflow-x:auto' });
+  const tbl = el('table', { class: 'datatable' },
+    el('thead', {}, el('tr', {}, el('th', {}, 'Datum'), el('th', {}, 'Übungen'), el('th', {}, 'Sätze'), el('th', {}, 'Volumen'))));
+  const tb = el('tbody');
+  for (const w of [...wos].reverse()){
+    const st = workoutStats(w);
+    tb.append(el('tr', {}, el('td', {}, fmtFull(w.date)), el('td', {}, String(st.exn)),
+      el('td', {}, String(st.sets)), el('td', {}, fmtNum(st.vol, 0) + ' kg')));
+  }
+  tbl.append(tb); tcard.append(tbl); host.append(tcard);
+}
+
+function renderStatsExercise(host, exId, cutoff){
+  const ex = exById(exId);
+  if (!ex) return;
+  const rows = [];
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    if (cutoff && w.date < cutoff) continue;
+    const m = sessionMetrics(w, exId);
+    if (m) rows.push({ date: w.date, ...m });
+  }
+
+  /* Kacheln: Rekorde (über alle Zeit) */
+  const rec = exerciseRecord(exId);
+  let bestE1 = null;
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    const m = sessionMetrics(w, exId);
+    if (m && (bestE1 === null || m.e1 > bestE1.v)) bestE1 = { v: m.e1, date: w.date };
+  }
+  const last = rows.length ? rows[rows.length - 1] : null;
+  host.append(el('div', { class: 'tiles' },
+    tile('Rekord', rec ? fmtNum(rec.w) : '–', rec ? `kg × ${rec.r} · ${fmtShort(rec.date)}` : 'kg'),
+    tile('Bestes e1RM', bestE1 ? fmtNum(bestE1.v) : '–', bestE1 ? 'kg · ' + fmtShort(bestE1.date) : 'kg'),
+    tile('Letzte Einheit', last ? fmtNum(last.best) : '–', last ? 'kg · ' + fmtShort(last.date) : '')));
+
+  /* Metrik-Schalter + Liniendiagramm */
+  const seg = el('div', { class: 'seg', style: 'margin-top:2px' },
+    Object.entries(METRICS).map(([k, m]) =>
+      el('button', { class: state.ui.statsMetric === k ? 'on' : '', onclick: () => {
+        state.ui.statsMetric = k; save(); renderStatistik();
+      } }, m.label)));
+  host.append(seg);
+
+  const metric = METRICS[state.ui.statsMetric] || METRICS.e1;
+  const card = el('div', { class: 'card' });
+  host.append(card);
+  /* Fürs Diagramm pro Tag zusammenfassen (zwei Einheiten am selben Tag → ein Punkt) */
+  const byDate = new Map();
+  for (const r of rows){
+    const a = byDate.get(r.date);
+    if (!a) byDate.set(r.date, Object.assign({}, r));
+    else {
+      a.best = Math.max(a.best, r.best);
+      a.e1 = Math.max(a.e1, r.e1);
+      a.reps = Math.max(a.reps, r.reps);
+      a.vol += r.vol;
+    }
+  }
+  const pts = [...byDate.values()].map(r => ({ x: parseKey(r.date).getTime(), date: r.date, y: metric.get(r) }))
+    .filter(p => p.y !== null && p.y !== undefined);
+  drawLineChart(card, pts, metric);
+
+  if (state.ui.statsMetric === 'e1'){
+    host.append(el('div', { class: 'sub', style: 'margin:2px 4px' },
+      'e1RM = geschätztes Maximalgewicht für 1 Wiederholung (aus Gewicht × Wdh. hochgerechnet).'));
+  }
+  if (state.ui.statsMetric === 'vol'){
+    host.append(el('div', { class: 'sub', style: 'margin:2px 4px' },
+      'Volumen = Gewicht × Wiederholungen, über alle Sätze zusammengezählt.'));
+  }
+
+  /* Tabelle */
+  host.append(el('div', { class: 'h2' }, 'Einheiten'));
+  const tcard = el('div', { class: 'card', style: 'overflow-x:auto' });
+  const tbl = el('table', { class: 'datatable' },
+    el('thead', {}, el('tr', {},
+      el('th', {}, 'Datum'), el('th', {}, 'Bester Satz'), el('th', {}, 'e1RM'), el('th', {}, 'Volumen'))));
+  const tb = el('tbody');
+  for (const r of [...rows].reverse()){
+    tb.append(el('tr', {},
+      el('td', {}, fmtFull(r.date)),
+      el('td', {}, fmtNum(r.best) + ' × ' + r.bestReps),
+      el('td', {}, fmtNum(r.e1) + ' kg'),
+      el('td', {}, fmtNum(r.vol, 0) + ' kg')));
+  }
+  if (!rows.length) tb.append(el('tr', {}, el('td', { colspan: '4', style: 'color:var(--muted)' }, 'Keine Einheiten im Zeitraum.')));
+  tbl.append(tb); tcard.append(tbl); host.append(tcard);
+}
+function tile(label, value, sub){
+  return el('div', { class: 'tile' },
+    el('div', { class: 'l' }, label),
+    el('div', { class: 'v' }, value),
+    sub ? el('div', { class: 'd' }, sub) : null);
+}
+
+/* ---------- Diagramme (SVG von Hand, eine Serie, Akzentblau) ---------- */
+const CH = { accent: '#3987e5', grid: '#2c2c2a', axis: '#383835', muted: '#898781',
+  ink2: '#c3c2b7', surface: '#1a1a19' };
+function svgEl(tag, attrs = {}){
+  const n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+function niceTicks(min, max, count){
+  if (!isFinite(min) || !isFinite(max)) { min = 0; max = 1; }
+  if (min === max){ max = min + 1; min = Math.max(0, min - 1); }
+  const step0 = (max - min) / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + step * 1e-6; v += step) ticks.push(Math.round(v * 1000) / 1000);
+  return { lo, hi, ticks, dec: step < 1 ? 1 : 0 };
+}
+function chartFrame(card, H){
+  const wrap = el('div', { class: 'chartwrap' });
+  card.innerHTML = '';
+  card.append(wrap);
+  const W = Math.max(280, card.clientWidth - 28);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H });
+  wrap.append(svg);
+  const tip = el('div', { class: 'tooltip' });
+  wrap.append(tip);
+  return { wrap, svg, tip, W };
+}
+function drawLineChart(card, pts, metric){
+  const H = 230;
+  const { wrap, svg, tip, W } = chartFrame(card, H);
+  if (pts.length === 0){
+    svg.remove();
+    wrap.append(el('div', { class: 'chart-empty' }, 'Noch keine Einheiten — nach dem ersten Training erscheint hier deine Kurve.'));
+    return;
+  }
+  const pad = { l: 46, r: 18, t: 16, b: 30 };
+  const xs = pts.map(p => p.x);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs);
+  if (x0 === x1){ x0 -= 864e5; x1 += 864e5; }
+  const ys = pts.map(p => p.y);
+  const { lo, hi, ticks, dec } = niceTicks(Math.min(...ys), Math.max(...ys), 4);
+  const X = x => pad.l + (x - x0) / (x1 - x0) * (W - pad.l - pad.r);
+  const Y = y => pad.t + (1 - (y - lo) / (hi - lo)) * (H - pad.t - pad.b);
+
+  for (const tv of ticks){
+    svg.append(svgEl('line', { x1: pad.l, x2: W - pad.r, y1: Y(tv), y2: Y(tv), stroke: CH.grid, 'stroke-width': 1 }));
+    const lab = svgEl('text', { x: pad.l - 8, y: Y(tv) + 3.5, fill: CH.muted, 'font-size': 10.5,
+      'text-anchor': 'end', style: 'font-variant-numeric:tabular-nums' });
+    lab.textContent = fmtNum(tv, dec);
+    svg.append(lab);
+  }
+  /* X-Beschriftung: 3–4 Daten, gleichmäßig über die BREITE verteilt und ohne Überlappung */
+  const li = pts.length - 1;
+  let idxs;
+  if (pts.length <= 4){
+    idxs = pts.map((_, i) => i);
+  } else {
+    const set = new Set();
+    for (let k = 0; k < 4; k++){
+      const tx = pad.l + k / 3 * (W - pad.l - pad.r);
+      let bi = 0, bd = Infinity;
+      pts.forEach((p, i) => { const d = Math.abs(X(p.x) - tx); if (d < bd){ bd = d; bi = i; } });
+      set.add(bi);
+    }
+    idxs = [...set].sort((a, b) => a - b);
+  }
+  let lastLabX = -Infinity;
+  for (const i of idxs){
+    const lx = X(pts[i].x);
+    if (lx - lastLabX < 45) continue;
+    lastLabX = lx;
+    const lab = svgEl('text', { x: lx, y: H - 8, fill: CH.muted, 'font-size': 10.5, 'text-anchor': 'middle' });
+    lab.textContent = fmtShort(pts[i].date);
+    svg.append(lab);
+  }
+  /* Fläche + Linie */
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + X(p.x).toFixed(1) + ',' + Y(p.y).toFixed(1)).join(' ');
+  if (pts.length > 1){
+    svg.append(svgEl('path', {
+      d: line + ` L${X(pts[li].x).toFixed(1)},${(H - pad.b).toFixed(1)} L${X(pts[0].x).toFixed(1)},${(H - pad.b).toFixed(1)} Z`,
+      fill: CH.accent, opacity: 0.1 }));
+    svg.append(svgEl('path', { d: line, fill: 'none', stroke: CH.accent, 'stroke-width': 2,
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  }
+  pts.forEach((p, i) => {
+    svg.append(svgEl('circle', { cx: X(p.x), cy: Y(p.y), r: i === li ? 5 : 4,
+      fill: CH.accent, stroke: CH.surface, 'stroke-width': 2 }));
+  });
+  /* Endwert direkt beschriften */
+  const endLab = svgEl('text', { x: Math.min(X(pts[li].x), W - pad.r - 2), y: Math.max(12, Y(pts[li].y) - 10),
+    fill: CH.ink2, 'font-size': 12, 'font-weight': 650, 'text-anchor': 'end' });
+  endLab.textContent = metric.fmt(pts[li].y) + (metric.unit ? ' ' + metric.unit : '');
+  svg.append(endLab);
+
+  /* Fadenkreuz + Tooltip */
+  const cross = svgEl('line', { y1: pad.t, y2: H - pad.b, stroke: CH.axis, 'stroke-width': 1, opacity: 0 });
+  svg.append(cross);
+  const hit = svgEl('rect', { x: 0, y: 0, width: W, height: H, fill: 'transparent' });
+  svg.append(hit);
+  function showTip(clientX){
+    const rect = svg.getBoundingClientRect();
+    const px = (clientX - rect.left) * (W / rect.width);
+    let best = 0, bd = Infinity;
+    pts.forEach((p, i) => { const d = Math.abs(X(p.x) - px); if (d < bd){ bd = d; best = i; } });
+    const p = pts[best];
+    cross.setAttribute('x1', X(p.x)); cross.setAttribute('x2', X(p.x));
+    cross.setAttribute('opacity', 1);
+    tip.innerHTML = '';
+    tip.append(el('b', {}, metric.fmt(p.y) + (metric.unit ? ' ' + metric.unit : '')), fmtFull(p.date));
+    tip.style.display = 'block';
+    const left = Math.max(52, Math.min(X(p.x) / W * rect.width, rect.width - 52));
+    tip.style.left = left + 'px';
+    tip.style.top = Math.max(0, Y(p.y) / H * rect.height - 58) + 'px';
+  }
+  hit.addEventListener('pointermove', e => showTip(e.clientX));
+  hit.addEventListener('pointerdown', e => showTip(e.clientX));
+  hit.addEventListener('pointerleave', () => { tip.style.display = 'none'; cross.setAttribute('opacity', 0); });
+}
+function drawBarChart(card, bars, { unit }){
+  const H = 210;
+  const { wrap, svg, tip, W } = chartFrame(card, H);
+  if (!bars.length){
+    svg.remove();
+    wrap.append(el('div', { class: 'chart-empty' }, 'Noch keine Daten.'));
+    return;
+  }
+  const pad = { l: 46, r: 10, t: 14, b: 28 };
+  const { lo, hi, ticks, dec } = niceTicks(0, Math.max(...bars.map(b => b.value), 1), 4);
+  const Y = y => pad.t + (1 - (y - lo) / (hi - lo)) * (H - pad.t - pad.b);
+  const band = (W - pad.l - pad.r) / bars.length;
+  const bw = Math.min(24, Math.max(6, band - 4));
+
+  for (const tv of ticks){
+    svg.append(svgEl('line', { x1: pad.l, x2: W - pad.r, y1: Y(tv), y2: Y(tv), stroke: CH.grid, 'stroke-width': 1 }));
+    const lab = svgEl('text', { x: pad.l - 8, y: Y(tv) + 3.5, fill: CH.muted, 'font-size': 10.5,
+      'text-anchor': 'end', style: 'font-variant-numeric:tabular-nums' });
+    lab.textContent = fmtNum(tv, dec);
+    svg.append(lab);
+  }
+  const step = Math.max(1, Math.ceil(bars.length / 6));
+  bars.forEach((b, i) => {
+    const cx = pad.l + band * i + band / 2;
+    const y = Y(b.value), y0 = Y(lo);
+    const h = Math.max(0, y0 - y);
+    if (h > 0){
+      const r = Math.min(4, bw / 2, h);
+      const x = cx - bw / 2;
+      svg.append(svgEl('path', { d:
+        `M${x},${y0} V${y + r} Q${x},${y} ${x + r},${y} H${x + bw - r} Q${x + bw},${y} ${x + bw},${y + r} V${y0} Z`,
+        fill: CH.accent, 'data-i': i }));
+    }
+    if (i % step === 0 || i === bars.length - 1){
+      const lab = svgEl('text', { x: cx, y: H - 7, fill: CH.muted, 'font-size': 10, 'text-anchor': 'middle' });
+      lab.textContent = b.label;
+      svg.append(lab);
+    }
+  });
+  svg.append(svgEl('line', { x1: pad.l, x2: W - pad.r, y1: Y(lo), y2: Y(lo), stroke: CH.axis, 'stroke-width': 1 }));
+  /* EINE Treffer-Fläche über die ganze Plotfläche — funktioniert auch mit dem Finger (Tippen UND Wischen) */
+  const hitAll = svgEl('rect', { x: pad.l, y: pad.t, width: W - pad.l - pad.r, height: H - pad.t - pad.b, fill: 'transparent' });
+  function showBarTip(clientX){
+    const rect = svg.getBoundingClientRect();
+    const px = (clientX - rect.left) * (W / rect.width);
+    const i = Math.max(0, Math.min(bars.length - 1, Math.floor((px - pad.l) / band)));
+    const b = bars[i];
+    const cx = pad.l + band * i + band / 2;
+    tip.innerHTML = '';
+    tip.append(el('b', {}, fmtNum(b.value, 0) + ' ' + unit), b.label);
+    tip.style.display = 'block';
+    tip.style.left = Math.max(52, Math.min(cx / W * rect.width, rect.width - 52)) + 'px';
+    tip.style.top = Math.max(0, Y(b.value) / H * rect.height - 56) + 'px';
+  }
+  hitAll.addEventListener('pointermove', e => showBarTip(e.clientX));
+  hitAll.addEventListener('pointerdown', e => showBarTip(e.clientX));
+  hitAll.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
+  svg.append(hitAll);
+}
+
+/* =========================================================================
+   Sichern & Wiederherstellen
+   ========================================================================= */
+async function getDownloads(){
+  if (typeof claude === 'undefined' || !claude || typeof claude.use !== 'function') return null;
+  try { return await claude.use('downloads'); } catch (e) { return null; }
+}
+function markBackup(){
+  state.meta.lastBackupAt = Date.now();
+  state.meta.workoutsAtBackup = finishedCount();
+  backupHintDismissed = false;
+  save(); renderBanner();
+}
+async function exportData(){
+  const json = JSON.stringify(state, null, 1);
+  const name = 'eisenbuch-sicherung-' + dateKey(new Date()) + '.json';
+  const dl = await getDownloads();
+  if (dl){
+    try {
+      await dl.save({ filename: name, data: json });
+      markBackup();
+      toast('Sicherung gespeichert');
+      return;
+    } catch (e) {
+      if (e && e.code === 'declined') return;      /* Nutzer hat abgelehnt */
+      /* sonst: Fallback unten */
+    }
+  }
+  openSheet('Daten sichern', (body) => {
+    body.append(el('div', { class: 'sub' },
+      'Automatisches Speichern klappt hier nicht. Kopiere den Text unten und lege ihn z. B. in einer Notiz-App ab — damit lassen sich alle Daten wiederherstellen.'));
+    const ta = el('textarea', { class: 'in', style: 'margin-top:10px;min-height:140px;font-size:16px' });
+    ta.value = json;
+    body.append(ta);
+    body.append(el('button', { class: 'btn primary block', style: 'margin-top:10px', onclick: async () => {
+      try {
+        await navigator.clipboard.writeText(json);
+        markBackup();
+        toast('In die Zwischenablage kopiert');
+      } catch (e) {
+        ta.focus(); ta.select();
+        toast('Bitte manuell kopieren (Text ist markiert)');
+      }
+    } }, 'Alles kopieren'));
+  });
+}
+function importFromObj(obj, close){
+  if (!obj || typeof obj !== 'object' || !Array.isArray(obj.exercises) || !Array.isArray(obj.workouts)){
+    toast('Das ist keine gültige Eisenbuch-Sicherung');
+    return;
+  }
+  const n = obj.workouts.filter(w => w.finishedAt).length;
+  const when = obj.meta && obj.meta.updatedAt ? fmtFull(dateKey(new Date(obj.meta.updatedAt))) : 'unbekannt';
+  confirmDlg(`Sicherung (${plural(n, 'Training', 'Trainings')}, Stand ${when}) laden? Die aktuellen Daten auf diesem Gerät werden ersetzt.`,
+    { okLabel: 'Laden', danger: true }).then(ok => {
+    if (!ok) return;
+    state = migrate(obj);
+    state.activeWorkoutId = state.workouts.some(w => w.id === state.activeWorkoutId) && state.activeWorkoutId || null;
+    state.timer = null;
+    save();
+    if (close) close();
+    renderBanner(); renderCurrentView(); renderTimer();
+    toast('Sicherung geladen');
+  });
+}
+function openImport(){
+  openSheet('Daten wiederherstellen', (body, close) => {
+    body.append(el('div', { class: 'sub' }, 'Sicherungs-Datei auswählen — oder den gesicherten Text unten einfügen.'));
+    const file = el('input', { type: 'file', accept: '.json,application/json', class: 'in', style: 'margin-top:10px;padding:9px' });
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        try { importFromObj(JSON.parse(String(rd.result)), close); }
+        catch (e) { toast('Datei konnte nicht gelesen werden'); }
+      };
+      rd.readAsText(f);
+    });
+    const ta = el('textarea', { class: 'in', style: 'margin-top:10px;min-height:110px;font-size:16px',
+      placeholder: 'Oder hier den gesicherten Text einfügen …' });
+    body.append(file, ta,
+      el('button', { class: 'btn block', style: 'margin-top:10px', onclick: () => {
+        try { importFromObj(JSON.parse(ta.value), close); }
+        catch (e) { toast('Text ist keine gültige Sicherung'); }
+      } }, 'Text laden'));
+  });
+}
+
+/* ---------- Einstellungen ---------- */
+function switchRow(title, sub, key){
+  const inp = el('input', { type: 'checkbox' });
+  inp.checked = !!state.settings[key];
+  inp.addEventListener('change', () => { state.settings[key] = inp.checked; save(); syncWakeLock(); unlockAudio(); });
+  return el('div', { class: 'setrow' },
+    el('div', { class: 'grow' }, el('div', { class: 't' }, title), sub ? el('div', { class: 's' }, sub) : null),
+    el('label', { class: 'switch' }, inp, el('span', { class: 'kn' })));
+}
+function openSettings(){
+  openSheet('Einstellungen', (body) => {
+    const restIn = el('input', { class: 'in', inputmode: 'numeric', value: String(state.settings.restSec),
+      style: 'width:90px;text-align:center' });
+    restIn.addEventListener('change', () => {
+      const v = parseInt0(restIn.value);
+      if (v && v >= 10 && v <= 900){ state.settings.restSec = v; save(); toast('Standard-Pause: ' + v + ' s'); }
+      else restIn.value = String(state.settings.restSec);
+    });
+    body.append(el('div', { class: 'setrow' },
+      el('div', { class: 'grow' },
+        el('div', { class: 't' }, 'Standard-Pause (Sekunden)'),
+        el('div', { class: 's' }, 'Gilt, wenn eine Übung keine eigene Pausenzeit hat')),
+      restIn));
+    body.append(switchRow('Ton am Pausen-Ende', 'Kurzes Signal, wenn die Pause vorbei ist', 'sound'));
+    body.append(switchRow('Vibration', 'Beim Abhaken und am Pausen-Ende', 'vibrate'));
+    body.append(switchRow('Bildschirm anlassen', 'Während eines laufenden Trainings nicht sperren', 'wakeLock'));
+
+    body.append(el('div', { class: 'h2' }, 'Datensicherung'));
+    body.append(el('div', { class: 'sub' },
+      state.meta.lastBackupAt
+        ? 'Letzte Sicherung: ' + fmtFull(dateKey(new Date(state.meta.lastBackupAt)))
+        : 'Noch nie gesichert.'));
+    body.append(el('div', { style: 'display:flex;gap:8px;margin-top:10px' },
+      el('button', { class: 'btn primary grow', onclick: exportData }, 'Daten sichern'),
+      el('button', { class: 'btn grow', onclick: openImport }, 'Wiederherstellen')));
+
+    body.append(el('div', { class: 'h2' }, 'Speicher'));
+    const okTxt = v => v === true ? 'funktioniert' : v === false ? 'blockiert' : 'wird geprüft …';
+    const seit = state.meta.createdAt ? fmtFull(dateKey(new Date(state.meta.createdAt))) : '—';
+    body.append(el('div', { class: 'sub' },
+      `Browser-Speicher: ${okTxt(lsOK)} · Geräte-Datenbank: ${okTxt(idbOK)}`),
+      el('div', { class: 'sub', style: 'margin-top:4px' },
+      `Auf diesem Gerät ${state.meta.loads || 1}-mal geöffnet · Daten seit ${seit}. ` +
+      'Merke: Steht hier nach jedem Neustart wieder „1-mal", behält dieses Gerät die Daten nicht — dann bitte melden.'),
+      el('div', { class: 'sub', style: 'margin-top:4px' },
+      'Alle Daten liegen nur in diesem Browser auf diesem Gerät — nichts wird ins Internet geladen. ' +
+      'Beim Löschen der Browserdaten wären sie weg, darum ab und zu sichern.'));
+
+    body.append(el('div', { class: 'h2' }, 'Gefahrenzone'));
+    body.append(el('button', { class: 'btn block danger', onclick: async () => {
+      if (!await confirmDlg('Wirklich ALLE Trainings und Übungen löschen?', { okLabel: 'Weiter', danger: true })) return;
+      if (!await confirmDlg('Letzte Warnung: Das lässt sich nicht rückgängig machen. Tipp: vorher oben über „Daten sichern" eine Sicherung anlegen.',
+        { okLabel: 'Endgültig löschen', danger: true })) return;
+      state = defaultState();
+      seedExercises(state);
+      save(); renderBanner(); renderCurrentView(); renderTimer();
+      toast('Alles zurückgesetzt');
+    } }, 'Alle Daten löschen'));
+
+    const created = state.meta.createdAt ? fmtFull(dateKey(new Date(state.meta.createdAt))) : '';
+    body.append(el('div', { class: 'sub', style: 'margin-top:16px;text-align:center' },
+      'Eisenbuch · dein privates Trainings-Logbuch' + (created ? ' · dabei seit ' + created : '')));
+  });
+}
+
+/* ---------- Start ---------- */
+async function init(){
+  $('#btn-settings').innerHTML = IC.gear;
+  $('#btn-settings').addEventListener('click', openSettings);
+  buildTabs();
+  await loadState();
+  /* Öffnungs-Zähler: bleibt er nach einem Neustart bei 1, behält dieses Gerät die Daten nicht */
+  state.meta.loads = (state.meta.loads || 0) + 1;
+  save();
+  /* abgelaufenen Timer von früher aufräumen */
+  if (state.timer && Date.now() - state.timer.endAt > 60000) state.timer = null;
+  renderBanner();
+  showView('training');
+  renderTimer();
+  syncWakeLock();
+  window.addEventListener('resize', debounce(() => {
+    if (curView === 'statistik') renderStatistik();
+  }, 200));
+  /* Offline-Fähigkeit — funktioniert nur auf richtigem Hosting, sonst still ignoriert */
+  if ('serviceWorker' in navigator){
+    try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
+  }
+}
+init();
+</script>
