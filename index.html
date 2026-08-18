@@ -18,7 +18,7 @@
   --warn:#fab219; --danger:#e66767; --dangerwash:rgba(230,103,103,.12);
   --r:14px; --rs:10px;
 }
-*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
 html{ color-scheme:dark; }
 html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink);
   font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; }
@@ -92,7 +92,6 @@ button.prev:active{ color:var(--ink2); }
 .stepbtn{ flex:1; min-height:48px; border-radius:12px; border:1px solid var(--line);
   background:var(--raised); font-size:17px; font-weight:750; color:var(--ink); }
 .stepbtn.plus{ background:var(--accent-deep); border-color:transparent; color:#fff; }
-.stepbtn.kb{ flex:0.9; font-size:13.5px; font-weight:600; color:var(--muted); background:transparent; }
 .stepbtn:active{ filter:brightness(1.25); }
 .sethead{ display:grid; grid-template-columns:30px 1fr 1fr 46px 30px; gap:8px;
   font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em;
@@ -274,7 +273,7 @@ select.in{ appearance:none; -webkit-appearance:none;
    ========================================================================= */
 
 /* ---------- kleine Helfer ---------- */
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 const $ = s => document.querySelector(s);
 function el(tag, attrs = {}, ...kids){
   const n = document.createElement(tag);
@@ -1307,22 +1306,17 @@ function openStripFor(row, s, kind, input, pv){
     input.classList.remove('err');
     saveSoon();
   }
-  const useKb = () => {
-    closeStrip();
-    input.readOnly = false;
-    input.focus();
-    setTimeout(() => { try { input.select(); } catch (e) {} }, 0);
-  };
+  /* Die Knöpfe dürfen dem Eingabefeld nicht den Fokus (und damit die Tastatur) klauen */
+  function stepBtn(label, d, cls){
+    const b = el('button', { class: 'stepbtn ' + (cls || ''), onclick: () => bump(d) }, label);
+    b.addEventListener('pointerdown', ev => ev.preventDefault());
+    b.addEventListener('mousedown', ev => ev.preventDefault());
+    return b;
+  }
   if (kind === 'w'){
-    strip.append(
-      el('button', { class: 'stepbtn', onclick: () => bump(-2.5) }, '−2,5'),
-      el('button', { class: 'stepbtn plus', onclick: () => bump(2.5) }, '+2,5'),
-      el('button', { class: 'stepbtn kb', onclick: useKb }, 'Tastatur'));
+    strip.append(stepBtn('−2,5', -2.5), stepBtn('+2,5', 2.5, 'plus'));
   } else {
-    strip.append(
-      el('button', { class: 'stepbtn', onclick: () => bump(-1) }, '−1'),
-      el('button', { class: 'stepbtn plus', onclick: () => bump(1) }, '+1'),
-      el('button', { class: 'stepbtn kb', onclick: useKb }, 'Tastatur'));
+    strip.append(stepBtn('−1', -1), stepBtn('+1', 1, 'plus'));
   }
   row.after(strip);
   openStrip = { el: strip, owner: row };
@@ -1331,15 +1325,16 @@ function setRow(wo, entry, s, i, live, prev, refresh){
   const pv = prev ? prev.sets[i] : null;
   const row = el('div', { class: 'set' + (s.done ? ' done' : '') });
   let wAtFocus = null, jumpT = null;
-  /* Felder starten im Schnellknopf-Modus (keine Tastatur); „Tastatur" schaltet zum Tippen um */
+  /* Antippen öffnet ganz normal den Zahlenblock — die Schnellknöpfe erscheinen ZUSÄTZLICH darunter */
   const wIn = el('input', { class: 'in', inputmode: 'decimal', autocomplete: 'off', enterkeyhint: 'next',
     value: fmtInput(s.w), placeholder: pv ? fmtInput(pv.w) : 'kg',
-    onclick: () => { if (wIn.readOnly) openStripFor(row, s, 'w', wIn, pv); },
-    onfocus: e => { wAtFocus = e.target.value;
-      if (!wIn.readOnly) setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
-    onblur: () => { clearTimeout(jumpT);
-      setTimeout(() => { if (document.activeElement !== wIn) wIn.readOnly = true; }, 150); },
-    onkeydown: e => { if (e.key === 'Enter'){ e.preventDefault(); rIn.readOnly = false; rIn.focus(); } },
+    onfocus: e => {
+      wAtFocus = e.target.value;
+      openStripFor(row, s, 'w', wIn, pv);
+      setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0);
+    },
+    onblur: () => clearTimeout(jumpT),
+    onkeydown: e => { if (e.key === 'Enter'){ e.preventDefault(); rIn.focus(); } },
     oninput: e => {
       s.w = parseNum(e.target.value);
       if (s.done && s.w === null){ s.done = false; row.classList.remove('done'); }
@@ -1350,7 +1345,6 @@ function setRow(wo, entry, s, i, live, prev, refresh){
       jumpT = setTimeout(() => {
         if (document.activeElement === wIn && s.w !== null && wIn.value && wIn.value !== wAtFocus
             && s.r === null && !/[.,]$/.test(wIn.value)){
-          rIn.readOnly = false;
           rIn.focus();
           if (document.activeElement !== rIn)
             requestAnimationFrame(() => { try { rIn.focus(); } catch (err) {} });
@@ -1359,16 +1353,15 @@ function setRow(wo, entry, s, i, live, prev, refresh){
     } });
   const rIn = el('input', { class: 'in', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'done',
     value: s.r === null || s.r === undefined ? '' : String(s.r), placeholder: pv ? String(pv.r) : 'Wdh.',
-    onclick: () => { if (rIn.readOnly) openStripFor(row, s, 'r', rIn, pv); },
-    onfocus: e => { if (!rIn.readOnly) setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
-    onblur: () => { setTimeout(() => { if (document.activeElement !== rIn) rIn.readOnly = true; }, 150); },
+    onfocus: e => {
+      openStripFor(row, s, 'r', rIn, pv);
+      setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0);
+    },
     oninput: e => {
       s.r = parseInt0(e.target.value);
       if (s.done && (s.r === null || s.r <= 0)){ s.done = false; row.classList.remove('done'); }
       e.target.classList.remove('err'); saveSoon();
     } });
-  wIn.readOnly = true;
-  rIn.readOnly = true;
   const chk = el('button', { class: 'chk', html: IC.check, 'aria-label': 'Satz abhaken' });
   chk.addEventListener('click', () => {
     closeStrip();
