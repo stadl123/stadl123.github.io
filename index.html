@@ -273,7 +273,7 @@ select.in{ appearance:none; -webkit-appearance:none;
    ========================================================================= */
 
 /* ---------- kleine Helfer ---------- */
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 const $ = s => document.querySelector(s);
 function el(tag, attrs = {}, ...kids){
   const n = document.createElement(tag);
@@ -422,12 +422,26 @@ function migrate(st){
     }));
   st.plans = (Array.isArray(st.plans) ? st.plans : [])
     .filter(p => p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim())
-    .map(p => ({
-      id: String(p.id || uid()), name: p.name,
-      exerciseIds: (Array.isArray(p.exerciseIds) ? p.exerciseIds : []).map(String),
-      createdAt: Number.isFinite(p.createdAt) ? p.createdAt : Date.now(),
-      lastUsedAt: Number.isFinite(p.lastUsedAt) ? p.lastUsedAt : null,
-    }));
+    .map(p => {
+      /* Alte Pläne (nur Übungs-Liste) in das neue Format mit Sätzen/Wdh.-Bereich überführen */
+      const rawItems = Array.isArray(p.items)
+        ? p.items
+        : (Array.isArray(p.exerciseIds) ? p.exerciseIds.map(id => ({ exerciseId: id })) : []);
+      return {
+        id: String(p.id || uid()), name: p.name,
+        items: rawItems
+          .filter(it => it && (typeof it === 'object' || typeof it === 'string'))
+          .map(it => typeof it === 'string' ? { exerciseId: it } : it)
+          .map(it => ({
+            exerciseId: String(it.exerciseId || ''),
+            sets: Number.isFinite(it.sets) && it.sets > 0 ? Math.min(10, Math.round(it.sets)) : null,
+            repLow: Number.isFinite(it.repLow) && it.repLow > 0 ? Math.round(it.repLow) : null,
+            repHigh: Number.isFinite(it.repHigh) && it.repHigh > 0 ? Math.round(it.repHigh) : null,
+          })),
+        createdAt: Number.isFinite(p.createdAt) ? p.createdAt : Date.now(),
+        lastUsedAt: Number.isFinite(p.lastUsedAt) ? p.lastUsedAt : null,
+      };
+    });
   st.activeWorkoutId = st.workouts.some(w => w.id === st.activeWorkoutId) ? st.activeWorkoutId : null;
   st.timer = (st.timer && typeof st.timer === 'object' && Number.isFinite(st.timer.endAt)) ? st.timer : null;
   st.version = 1;
@@ -896,7 +910,7 @@ function renderTrainingStart(host){
     const byUse = [...state.plans].sort((a, b) => (a.lastUsedAt || 0) - (b.lastUsedAt || 0));
     const nextId = state.plans.length > 1 ? byUse[0].id : null;
     for (const p of [...state.plans].sort((a, b) => a.name.localeCompare(b.name, 'de'))){
-      const exN = p.exerciseIds.filter(id => exById(id)).length;
+      const exN = p.items.filter(it => exById(it.exerciseId)).length;
       pc.append(el('button', { class: 'li', onclick: () => startWorkoutFromPlan(p.id) },
         el('div', { class: 'grow' },
           el('div', { class: 't' }, p.name),
@@ -984,13 +998,26 @@ function startWorkoutFromPlan(planId){
     id: uid(), date: dateKey(new Date()), startedAt: Date.now(), finishedAt: null,
     note: '', planName: p.name, entries: [],
   };
-  for (const exId of p.exerciseIds){
-    if (!exById(exId)) continue;
-    const prev = prevSession(exId, wo);
-    const sets = prev
-      ? prev.sets.map(s => ({ id: uid(), w: s.w, r: s.r, done: false, ts: null }))
-      : [{ id: uid(), w: null, r: null, done: false, ts: null }];
-    wo.entries.push({ id: uid(), exerciseId: exId, note: '', sets });
+  for (const it of p.items){
+    const ex = exById(it.exerciseId);
+    if (!ex) continue;
+    const prev = prevSession(it.exerciseId, wo);
+    let sets;
+    if (prev){
+      /* Schon mal trainiert → echte Ergebnisse vom letzten Mal vorbefüllen */
+      sets = prev.sets.map(s => ({ id: uid(), w: s.w, r: s.r, done: false, ts: null }));
+      /* Sieht der Plan mehr Sätze vor, zusätzliche anhängen (Werte vom letzten Satz) */
+      while ((it.sets || 0) > sets.length){
+        const lastS = sets[sets.length - 1];
+        sets.push({ id: uid(), w: lastS ? lastS.w : null, r: lastS ? lastS.r : null, done: false, ts: null });
+      }
+    } else {
+      /* Erstes Mal → alle Sätze ausklappen, Ziel-Wiederholungen vorbefüllen */
+      const n = it.sets || 3;
+      const r0 = it.repLow || ex.repLow || null;
+      sets = Array.from({ length: n }, () => ({ id: uid(), w: null, r: r0, done: false, ts: null }));
+    }
+    wo.entries.push({ id: uid(), exerciseId: it.exerciseId, note: '', sets });
   }
   state.workouts.push(wo);
   state.activeWorkoutId = wo.id;
@@ -1014,7 +1041,7 @@ function openPlanManager(){
           el('div', { class: 'grow' },
             el('div', { class: 't' }, p.name),
             el('div', { class: 's' },
-              p.exerciseIds.map(id => exById(id)?.name).filter(Boolean).join(', ') || 'noch leer — antippen zum Befüllen'))));
+              p.items.map(it => exById(it.exerciseId)?.name).filter(Boolean).join(', ') || 'noch leer — antippen zum Befüllen'))));
       }
       list.append(card);
     }
@@ -1026,7 +1053,7 @@ function openPlanManager(){
           toast('Diesen Plan-Namen gibt es schon');
           return;
         }
-        const p = { id: uid(), name, exerciseIds: [], createdAt: Date.now(), lastUsedAt: null };
+        const p = { id: uid(), name, items: [], createdAt: Date.now(), lastUsedAt: null };
         state.plans.push(p);
         save();
         renderPlans();
@@ -1042,22 +1069,38 @@ function openPlanEditor(planId, onChange){
     const list = el('div', { class: 'card', style: 'padding:2px 12px' });
     function renderList(){
       list.innerHTML = '';
-      p.exerciseIds.forEach((exId, i) => {
-        const ex = exById(exId);
-        list.append(el('div', { class: 'li' },
-          el('div', { class: 'grow' }, el('div', { class: 't' }, ex ? ex.name : '(gelöschte Übung)')),
-          el('button', { class: 'btn small', 'aria-label': 'nach oben', onclick: () => {
-            if (i > 0){ p.exerciseIds.splice(i, 1); p.exerciseIds.splice(i - 1, 0, exId); save(); renderList(); }
-          } }, '▲'),
-          el('button', { class: 'btn small', 'aria-label': 'nach unten', onclick: () => {
-            if (i < p.exerciseIds.length - 1){ p.exerciseIds.splice(i, 1); p.exerciseIds.splice(i + 1, 0, exId); save(); renderList(); }
-          } }, '▼'),
-          el('button', { class: 'btn small danger', 'aria-label': 'entfernen', onclick: () => {
-            p.exerciseIds = p.exerciseIds.filter(x => x !== exId); save(); renderList();
-          } }, '✕')));
+      p.items.forEach((it, i) => {
+        const ex = exById(it.exerciseId);
+        const numIn = (val, ph, width, onCh) => {
+          const inp = el('input', { class: 'in', inputmode: 'numeric', autocomplete: 'off',
+            style: `width:${width}px;text-align:center;padding:8px 4px`, value: val ?? '', placeholder: ph });
+          inp.addEventListener('change', () => { onCh(parseInt0(inp.value)); save(); });
+          return inp;
+        };
+        const setsIn = numIn(it.sets, '3', 52, v => { it.sets = v && v > 0 ? Math.min(10, v) : null; });
+        const lowIn  = numIn(it.repLow, 'von', 52, v => { it.repLow = v && v > 0 ? v : null; });
+        const highIn = numIn(it.repHigh, 'bis', 52, v => { it.repHigh = v && v > 0 ? v : null; });
+        list.append(el('div', { style: 'padding:12px 4px;border-bottom:1px solid var(--line)' },
+          el('div', { class: 'row' },
+            el('div', { class: 'grow', style: 'font-weight:650;font-size:16px' }, ex ? ex.name : '(gelöschte Übung)'),
+            el('button', { class: 'btn small', 'aria-label': 'nach oben', onclick: () => {
+              if (i > 0){ p.items.splice(i, 1); p.items.splice(i - 1, 0, it); save(); renderList(); }
+            } }, '▲'),
+            el('button', { class: 'btn small', 'aria-label': 'nach unten', onclick: () => {
+              if (i < p.items.length - 1){ p.items.splice(i, 1); p.items.splice(i + 1, 0, it); save(); renderList(); }
+            } }, '▼'),
+            el('button', { class: 'btn small danger', 'aria-label': 'entfernen', onclick: () => {
+              p.items = p.items.filter(x => x !== it); save(); renderList();
+            } }, '✕')),
+          el('div', { class: 'row', style: 'margin-top:8px' },
+            el('span', { class: 'sub' }, 'Sätze'), setsIn,
+            el('span', { class: 'sub', style: 'margin-left:10px' }, 'Wdh.'), lowIn,
+            el('span', { class: 'sub' }, 'bis'), highIn)));
       });
-      if (!p.exerciseIds.length) list.append(el('div', { class: 'chart-empty' }, 'Noch keine Übungen im Plan.'));
+      if (!p.items.length) list.append(el('div', { class: 'chart-empty' }, 'Noch keine Übungen im Plan.'));
     }
+    body.append(el('div', { class: 'sub', style: 'margin:6px 2px 8px' },
+      'Sätze und Wdh.-Bereich gelten beim ersten Start des Plans. Ab dem zweiten Mal stehen deine echten Ergebnisse vom letzten Mal drin.'));
     body.append(list);
     body.append(el('button', { class: 'btn block', style: 'margin-top:8px', onclick: () => pickExerciseForPlan(p, renderList) },
       el('span', { html: IC.plus }), 'Übung hinzufügen'));
@@ -1080,8 +1123,11 @@ function openPlanEditor(planId, onChange){
   }, () => { if (onChange) onChange(); renderCurrentView(); });
 }
 function pickExerciseForPlan(p, done){
+  const addItem = ex => {
+    p.items.push({ exerciseId: ex.id, sets: 3, repLow: ex.repLow, repHigh: ex.repHigh });
+  };
   openSheet('Übung für den Plan', (body, close) => {
-    const inPlan = new Set(p.exerciseIds);
+    const inPlan = new Set(p.items.map(it => it.exerciseId));
     const search = el('input', { class: 'in', placeholder: 'Suchen oder neu anlegen …', autocomplete: 'off' });
     const list = el('div', { class: 'card', style: 'padding:2px 12px' });
     function renderList(){
@@ -1094,7 +1140,7 @@ function pickExerciseForPlan(p, done){
         const added = inPlan.has(ex.id);
         list.append(el('button', { class: 'li', onclick: () => {
           if (added) return;
-          p.exerciseIds.push(ex.id); save(); close(); done();
+          addItem(ex); save(); close(); done();
         } },
           el('div', { class: 'grow' },
             el('div', { class: 't', style: added ? 'color:var(--muted)' : '' }, ex.name),
@@ -1104,7 +1150,7 @@ function pickExerciseForPlan(p, done){
         for (const arch of state.exercises.filter(e => e.archived && e.name.toLowerCase().includes(q))){
           list.append(el('button', { class: 'li', onclick: () => {
             arch.archived = false;
-            if (!inPlan.has(arch.id)) p.exerciseIds.push(arch.id);
+            if (!inPlan.has(arch.id)) addItem(arch);
             save(); close(); done();
           } },
             el('div', { class: 'grow' },
@@ -1117,7 +1163,7 @@ function pickExerciseForPlan(p, done){
           const ex = { id: uid(), name: search.value.trim(), notes: '', restSec: null, archived: false,
             createdAt: Date.now(), muscle: null, repLow: null, repHigh: null };
           state.exercises.push(ex);
-          p.exerciseIds.push(ex.id);
+          addItem(ex);
           save(); close(); done();
         } },
           el('div', { class: 'grow' },
@@ -1191,17 +1237,22 @@ function entryCard(wo, entry, live, refresh){
       'Letztes Mal (' + fmtShort(prev.date) + '): ' +
       prev.sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ') + '  ›'));
   }
-  /* Steigerungs-Vorschlag, solange noch kein Satz abgehakt ist */
-  const sugg = ex ? progressionSuggestion(ex, prev) : null;
+  /* Steigerungs-Vorschlag, solange noch kein Satz abgehakt ist (Plan-Ziele haben Vorrang) */
+  const pItem = ex ? planItemFor(wo, ex.id) : null;
+  const target = ex ? {
+    repLow: (pItem && pItem.repLow) || ex.repLow,
+    repHigh: (pItem && pItem.repHigh) || ex.repHigh,
+  } : null;
+  const sugg = ex ? progressionSuggestion(target, prev) : null;
   if (sugg && !entry.sets.some(s => s.done)){
     card.append(el('button', { class: 'suggest', onclick: () => {
       for (const s of entry.sets){
-        if (!s.done){ s.w = sugg.w; if (ex.repLow) s.r = ex.repLow; }
+        if (!s.done){ s.w = sugg.w; if (target.repLow) s.r = target.repLow; }
       }
       save(); refresh();
       toast('Vorschlag übernommen: ' + fmtNum(sugg.w) + ' kg');
     } },
-      `▲ Vorschlag: heute ${fmtNum(sugg.w)} kg probieren — letztes Mal überall ${ex.repHigh} Wdh. geschafft. (Antippen zum Übernehmen)`));
+      `▲ Vorschlag: heute ${fmtNum(sugg.w)} kg probieren — letztes Mal überall ${target.repHigh} Wdh. geschafft. (Antippen zum Übernehmen)`));
   }
 
   card.append(el('div', { class: 'sethead' },
@@ -1242,11 +1293,17 @@ function moveEntry(wo, entry, dir, refresh){
   save(); refresh();
 }
 /* Steigerungs-Vorschlag: letztes Mal überall das obere Wdh.-Ziel geschafft → mehr Gewicht */
-function progressionSuggestion(ex, prev){
-  if (!ex || !ex.repHigh || !prev || !prev.sets.length) return null;
-  if (!prev.sets.every(s => s.r >= ex.repHigh)) return null;
+function progressionSuggestion(target, prev){
+  if (!target || !target.repHigh || !prev || !prev.sets.length) return null;
+  if (!prev.sets.every(s => s.r >= target.repHigh)) return null;
   const maxW = Math.max(...prev.sets.map(s => s.w));
   return { w: Math.round((maxW + 2.5) * 100) / 100 };
+}
+/* Plan-Eintrag zu einer Übung im laufenden (Plan-)Training — dessen Wdh.-Ziele haben Vorrang */
+function planItemFor(wo, exId){
+  if (!wo.planName) return null;
+  const p = state.plans.find(x => x.name.toLowerCase() === wo.planName.toLowerCase());
+  return p ? (p.items.find(it => it.exerciseId === exId) || null) : null;
 }
 /* Kleine Historie: die letzten 5 Einheiten einer Übung, ohne das Training zu verlassen */
 function openExerciseHistory(exId, wo){
@@ -1501,13 +1558,19 @@ function openWorkoutSummary(wo){
     body.append(el('button', { class: 'btn ghost block', style: 'margin-top:8px;color:var(--muted)', onclick: async () => {
       const name = await inputDlg('Name für den Plan:', 'z. B. Push', wo.planName || '');
       if (!name) return;
-      const ids = [];
+      const items = [];
       const seenIds = new Set();
-      for (const en of wo.entries)
-        if (!seenIds.has(en.exerciseId) && exById(en.exerciseId)){ seenIds.add(en.exerciseId); ids.push(en.exerciseId); }
+      for (const en of wo.entries){
+        if (seenIds.has(en.exerciseId)) continue;
+        const ex2 = exById(en.exerciseId);
+        if (!ex2) continue;
+        seenIds.add(en.exerciseId);
+        items.push({ exerciseId: en.exerciseId, sets: setsOf(wo, en.exerciseId).length || null,
+          repLow: ex2.repLow, repHigh: ex2.repHigh });
+      }
       const existing = state.plans.find(pl => pl.name.toLowerCase() === name.toLowerCase());
-      if (existing){ existing.exerciseIds = ids; toast('Plan „' + existing.name + '" aktualisiert'); }
-      else { state.plans.push({ id: uid(), name, exerciseIds: ids, createdAt: Date.now(), lastUsedAt: Date.now() }); toast('Plan „' + name + '" angelegt'); }
+      if (existing){ existing.items = items; toast('Plan „' + existing.name + '" aktualisiert'); }
+      else { state.plans.push({ id: uid(), name, items, createdAt: Date.now(), lastUsedAt: Date.now() }); toast('Plan „' + name + '" angelegt'); }
       save(); renderCurrentView();
     } }, 'Als Plan speichern …'));
     body.append(el('button', { class: 'btn ghost block', style: 'margin-top:8px;color:var(--muted)',
@@ -2313,7 +2376,9 @@ function mergeBackup(obj){
   const havePName = new Set(state.plans.map(p => p.name.trim().toLowerCase()));
   for (const p of imp.plans){
     if (haveP.has(p.id) || havePName.has(p.name.trim().toLowerCase())) continue;
-    p.exerciseIds = p.exerciseIds.map(id => remap.get(id) || id).filter(id => byId.has(id));
+    p.items = p.items
+      .map(it => ({ ...it, exerciseId: remap.get(it.exerciseId) || it.exerciseId }))
+      .filter(it => byId.has(it.exerciseId));
     state.plans.push(p);
     havePName.add(p.name.trim().toLowerCase());
   }
