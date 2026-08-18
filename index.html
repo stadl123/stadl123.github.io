@@ -273,7 +273,7 @@ select.in{ appearance:none; -webkit-appearance:none;
    ========================================================================= */
 
 /* ---------- kleine Helfer ---------- */
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 const $ = s => document.querySelector(s);
 function el(tag, attrs = {}, ...kids){
   const n = document.createElement(tag);
@@ -911,12 +911,15 @@ function renderTrainingStart(host){
     const nextId = state.plans.length > 1 ? byUse[0].id : null;
     for (const p of [...state.plans].sort((a, b) => a.name.localeCompare(b.name, 'de'))){
       const exN = p.items.filter(it => exById(it.exerciseId)).length;
-      pc.append(el('button', { class: 'li', onclick: () => startWorkoutFromPlan(p.id) },
-        el('div', { class: 'grow' },
+      pc.append(el('div', { class: 'li' },
+        el('button', { class: 'grow', style: 'text-align:left;min-width:0',
+          onclick: () => startWorkoutFromPlan(p.id) },
           el('div', { class: 't' }, p.name),
           el('div', { class: 's' }, plural(exN, 'Übung', 'Übungen') +
             (p.lastUsedAt ? ' · zuletzt ' + fmtFull(dateKey(new Date(p.lastUsedAt))) : ' · noch nie benutzt'))),
-        p.id === nextId ? el('span', { class: 'chip acc' }, 'als Nächstes?') : null));
+        p.id === nextId ? el('span', { class: 'chip acc' }, 'als Nächstes?') : null,
+        el('button', { class: 'iconbtn', 'aria-label': 'Plan bearbeiten',
+          onclick: () => openPlanEditor(p.id, null) }, '✎')));
     }
     host.append(pc);
   }
@@ -1102,6 +1105,7 @@ function openPlanEditor(planId, onChange){
     body.append(el('div', { class: 'sub', style: 'margin:6px 2px 8px' },
       'Sätze und Wdh.-Bereich gelten beim ersten Start des Plans. Ab dem zweiten Mal stehen deine echten Ergebnisse vom letzten Mal drin.'));
     body.append(list);
+    renderList();
     body.append(el('button', { class: 'btn block', style: 'margin-top:8px', onclick: () => pickExerciseForPlan(p, renderList) },
       el('span', { html: IC.plus }), 'Übung hinzufügen'));
     body.append(el('button', { class: 'btn block', style: 'margin-top:8px', onclick: async () => {
