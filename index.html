@@ -83,7 +83,17 @@ label.f > span{ display:block; font-size:12.5px; color:var(--muted); margin:0 2p
 .entry .ename{ font-size:17px; font-weight:700; }
 .entry .enote{ color:var(--muted); font-size:12.5px; font-style:italic; margin-top:2px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.entry .prev{ color:var(--muted); font-size:12.5px; margin:6px 0 2px; }
+.entry .prev{ display:block; width:100%; text-align:left; color:var(--muted); font-size:12.5px; margin:6px 0 2px; }
+button.prev:active{ color:var(--ink2); }
+.suggest{ display:block; width:100%; text-align:left; font-size:12.5px; margin:6px 0 2px;
+  color:var(--good); }
+/* Schnellknöpfe unter dem angetippten Feld */
+.stepstrip{ display:flex; gap:8px; margin:4px 0 10px; }
+.stepbtn{ flex:1; min-height:48px; border-radius:12px; border:1px solid var(--line);
+  background:var(--raised); font-size:17px; font-weight:750; color:var(--ink); }
+.stepbtn.plus{ background:var(--accent-deep); border-color:transparent; color:#fff; }
+.stepbtn.kb{ flex:0.9; font-size:13.5px; font-weight:600; color:var(--muted); background:transparent; }
+.stepbtn:active{ filter:brightness(1.25); }
 .sethead{ display:grid; grid-template-columns:30px 1fr 1fr 46px 30px; gap:8px;
   font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em;
   margin:8px 0 2px; text-align:center; }
@@ -264,6 +274,7 @@ select.in{ appearance:none; -webkit-appearance:none;
    ========================================================================= */
 
 /* ---------- kleine Helfer ---------- */
+const APP_VERSION = '2.0';
 const $ = s => document.querySelector(s);
 function el(tag, attrs = {}, ...kids){
   const n = document.createElement(tag);
@@ -333,8 +344,13 @@ const IC = {
 
 /* ---------- Zustand ---------- */
 const LS_KEY = 'eisenbuch-v1';
-const SEED = ['Kniebeuge','Kreuzheben','Bankdrücken','Schulterdrücken','Langhantel-Rudern',
-  'Klimmzüge','Latzug','Beinpresse','Bizeps-Curls','Trizepsdrücken am Kabel','Ausfallschritte','Seitheben'];
+const MUSCLES = ['Brust','Rücken','Schultern','Arme','Beine','Rumpf','Sonstiges'];
+const SEED = [
+  ['Kniebeuge','Beine'], ['Kreuzheben','Rücken'], ['Bankdrücken','Brust'], ['Schulterdrücken','Schultern'],
+  ['Langhantel-Rudern','Rücken'], ['Klimmzüge','Rücken'], ['Latzug','Rücken'], ['Beinpresse','Beine'],
+  ['Bizeps-Curls','Arme'], ['Trizepsdrücken am Kabel','Arme'], ['Ausfallschritte','Beine'], ['Seitheben','Schultern'],
+];
+const SEED_MUSCLE = new Map(SEED);
 
 function defaultState(){
   return {
@@ -343,6 +359,7 @@ function defaultState(){
     settings: { restSec: 90, sound: true, vibrate: true, wakeLock: true },
     exercises: [],
     workouts: [],
+    plans: [],
     activeWorkoutId: null,
     timer: null,
     ui: { statsExercise: 'all', statsRange: 90, statsMetric: 'e1', welcomeDismissed: false },
@@ -354,8 +371,9 @@ let curView = 'training';
 let backupHintDismissed = false;
 
 function seedExercises(st){
-  st.exercises = SEED.map(name => ({
+  st.exercises = SEED.map(([name, muscle]) => ({
     id: uid(), name, notes: '', restSec: null, archived: false, createdAt: Date.now(),
+    muscle, repLow: null, repHigh: null,
   }));
 }
 function migrate(st){
@@ -372,6 +390,9 @@ function migrate(st){
       restSec: Number.isFinite(e.restSec) && e.restSec > 0 ? Math.round(e.restSec) : null,
       archived: !!e.archived,
       createdAt: Number.isFinite(e.createdAt) ? e.createdAt : Date.now(),
+      muscle: MUSCLES.includes(e.muscle) ? e.muscle : (SEED_MUSCLE.get(e.name) || null),
+      repLow: Number.isFinite(e.repLow) && e.repLow > 0 ? Math.round(e.repLow) : null,
+      repHigh: Number.isFinite(e.repHigh) && e.repHigh > 0 ? Math.round(e.repHigh) : null,
     }));
   st.workouts = (Array.isArray(st.workouts) ? st.workouts : [])
     .filter(w => w && typeof w === 'object')
@@ -382,6 +403,7 @@ function migrate(st){
       startedAt: Number.isFinite(w.startedAt) ? w.startedAt : null,
       finishedAt: Number.isFinite(w.finishedAt) ? w.finishedAt : null,
       note: typeof w.note === 'string' ? w.note : '',
+      planName: typeof w.planName === 'string' ? w.planName : '',
       entries: (Array.isArray(w.entries) ? w.entries : [])
         .filter(en => en && typeof en === 'object')
         .map(en => ({
@@ -398,6 +420,14 @@ function migrate(st){
               ts: Number.isFinite(s.ts) ? s.ts : null,
             })),
         })),
+    }));
+  st.plans = (Array.isArray(st.plans) ? st.plans : [])
+    .filter(p => p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim())
+    .map(p => ({
+      id: String(p.id || uid()), name: p.name,
+      exerciseIds: (Array.isArray(p.exerciseIds) ? p.exerciseIds : []).map(String),
+      createdAt: Number.isFinite(p.createdAt) ? p.createdAt : Date.now(),
+      lastUsedAt: Number.isFinite(p.lastUsedAt) ? p.lastUsedAt : null,
     }));
   st.activeWorkoutId = st.workouts.some(w => w.id === st.activeWorkoutId) ? st.activeWorkoutId : null;
   st.timer = (st.timer && typeof st.timer === 'object' && Number.isFinite(st.timer.endAt)) ? st.timer : null;
@@ -699,7 +729,7 @@ function toast(msg){
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.remove('show'), 2300);
 }
-function openSheet(title, buildContent){
+function openSheet(title, buildContent, onClose){
   const host = $('#sheets');
   const back = el('div', { class: 'backdrop' });
   const inner = el('div', { class: 'sheetin' });
@@ -708,7 +738,7 @@ function openSheet(title, buildContent){
   const depth = host.querySelectorAll('.sheet').length;
   back.style.zIndex = String(60 + 2 * depth);
   sheet.style.zIndex = String(61 + 2 * depth);
-  function close(){ back.remove(); sheet.remove(); }
+  function close(){ back.remove(); sheet.remove(); if (onClose) onClose(); }
   back.addEventListener('click', close);
   inner.append(
     el('div', { class: 'grab' }),
@@ -734,6 +764,23 @@ function confirmDlg(msg, { okLabel = 'Ja', danger = false } = {}){
     ));
     wrap.addEventListener('click', e => { if (e.target === wrap) done(false); });
     document.body.append(wrap);
+  });
+}
+/* Dialog mit einem Text-Eingabefeld */
+function inputDlg(msg, placeholder, value){
+  return new Promise(res => {
+    const wrap = el('div', { class: 'cwrap' });
+    function done(v){ wrap.remove(); res(v); }
+    const inp = el('input', { class: 'in', placeholder: placeholder || '', value: value || '',
+      style: 'margin-top:12px' });
+    wrap.append(el('div', { class: 'cbox' },
+      el('div', { class: 'm' }, msg), inp,
+      el('div', { class: 'a' },
+        el('button', { class: 'btn', onclick: () => done(null) }, 'Abbrechen'),
+        el('button', { class: 'btn primary', onclick: () => done(inp.value.trim() || null) }, 'OK'))));
+    wrap.addEventListener('click', e => { if (e.target === wrap) done(null); });
+    document.body.append(wrap);
+    setTimeout(() => inp.focus(), 60);
   });
 }
 /* Dialog mit mehreren Wahlmöglichkeiten (untereinander) */
@@ -770,11 +817,17 @@ function renderBanner(){
     return;
   }
   const since = finishedCount() - (state.meta.workoutsAtBackup || 0);
-  if (!backupHintDismissed && finishedCount() > 0 && since >= 6){
+  /* Erinnerung: nach 6 neuen Trainings ODER wenn die letzte Sicherung zu lange her ist */
+  const overdue = state.meta.lastBackupAt
+    ? (since >= 1 && Date.now() - state.meta.lastBackupAt > 21 * 864e5)
+    : (finishedCount() >= 2 && Date.now() - (state.meta.createdAt || 0) > 7 * 864e5);
+  if (!backupHintDismissed && finishedCount() > 0 && (since >= 6 || overdue)){
     host.append(el('div', { class: 'banner' },
       el('b', {}, 'Sicherung empfohlen: '),
       state.meta.lastBackupAt
-        ? `Seit der letzten Sicherung sind ${since} Trainings dazugekommen.`
+        ? (since >= 6
+          ? `Seit der letzten Sicherung sind ${since} Trainings dazugekommen.`
+          : 'Die letzte Sicherung ist über drei Wochen her.')
         : 'Deine Trainings sind noch nie gesichert worden.',
       el('div', { class: 'bact' },
         el('button', { class: 'btn small primary', onclick: exportData }, 'Jetzt sichern'),
@@ -837,9 +890,27 @@ function renderTrainingStart(host){
       `Diese Woche: ${wk} Training${wk === 1 ? '' : 's'} · ${fmtNum(wkVol, 0)} kg bewegt`));
   }
 
+  /* Pläne: mit einem Tipp das richtige Training starten */
+  if (state.plans.length){
+    host.append(el('div', { class: 'h2' }, 'Deine Pläne'));
+    const pc = el('div', { class: 'card', style: 'padding:2px 12px' });
+    const byUse = [...state.plans].sort((a, b) => (a.lastUsedAt || 0) - (b.lastUsedAt || 0));
+    const nextId = state.plans.length > 1 ? byUse[0].id : null;
+    for (const p of [...state.plans].sort((a, b) => a.name.localeCompare(b.name, 'de'))){
+      const exN = p.exerciseIds.filter(id => exById(id)).length;
+      pc.append(el('button', { class: 'li', onclick: () => startWorkoutFromPlan(p.id) },
+        el('div', { class: 'grow' },
+          el('div', { class: 't' }, p.name),
+          el('div', { class: 's' }, plural(exN, 'Übung', 'Übungen') +
+            (p.lastUsedAt ? ' · zuletzt ' + fmtFull(dateKey(new Date(p.lastUsedAt))) : ' · noch nie benutzt'))),
+        p.id === nextId ? el('span', { class: 'chip acc' }, 'als Nächstes?') : null));
+    }
+    host.append(pc);
+  }
+
   const card = el('div', { class: 'card' });
-  card.append(el('button', { class: 'btn primary block', onclick: () => startWorkout(null) },
-    el('span', { html: IC.plus }), 'Training starten'));
+  card.append(el('button', { class: 'btn ' + (state.plans.length ? '' : 'primary') + ' block', onclick: () => startWorkout(null) },
+    el('span', { html: IC.plus }), state.plans.length ? 'Freies Training starten' : 'Training starten'));
   const last = [...sortedWorkouts()].reverse().find(w => w.finishedAt);
   if (last){
     const st = workoutStats(last);
@@ -851,6 +922,8 @@ function renderTrainingStart(host){
       onclick: openImport }, 'Sicherung wiederherstellen …'));
   }
   host.append(card);
+  host.append(el('button', { class: 'btn ghost block', style: 'color:var(--muted)', onclick: openPlanManager },
+    state.plans.length ? 'Pläne verwalten …' : 'Trainingsplan anlegen (z. B. Push / Pull / Beine) …'));
 
   /* unfertiges Training von früher? */
   const stale = state.workouts.find(w => !w.finishedAt && w.id !== state.activeWorkoutId);
@@ -887,11 +960,12 @@ function renderTrainingStart(host){
 function startWorkout(templateId){
   const wo = {
     id: uid(), date: dateKey(new Date()), startedAt: Date.now(), finishedAt: null,
-    note: '', entries: [],
+    note: '', planName: '', entries: [],
   };
   if (templateId){
     const tpl = state.workouts.find(w => w.id === templateId);
     if (tpl){
+      wo.planName = tpl.planName || '';
       wo.entries = tpl.entries.map(en => ({
         id: uid(), exerciseId: en.exerciseId, note: '',
         sets: validSets(en).map(s => ({ id: uid(), w: s.w, r: s.r, done: false, ts: null })),
@@ -902,6 +976,160 @@ function startWorkout(templateId){
   state.activeWorkoutId = wo.id;
   save(); syncWakeLock(); renderTraining();
   if (!templateId) openExercisePicker(wo);
+}
+/* Training aus einem Plan starten — Übungen in Plan-Reihenfolge, Gewichte vom letzten Mal */
+function startWorkoutFromPlan(planId){
+  const p = state.plans.find(x => x.id === planId);
+  if (!p) return;
+  const wo = {
+    id: uid(), date: dateKey(new Date()), startedAt: Date.now(), finishedAt: null,
+    note: '', planName: p.name, entries: [],
+  };
+  for (const exId of p.exerciseIds){
+    if (!exById(exId)) continue;
+    const prev = prevSession(exId, wo);
+    const sets = prev
+      ? prev.sets.map(s => ({ id: uid(), w: s.w, r: s.r, done: false, ts: null }))
+      : [{ id: uid(), w: null, r: null, done: false, ts: null }];
+    wo.entries.push({ id: uid(), exerciseId: exId, note: '', sets });
+  }
+  state.workouts.push(wo);
+  state.activeWorkoutId = wo.id;
+  save(); syncWakeLock(); renderTraining();
+  if (!wo.entries.length) openExercisePicker(wo);
+}
+/* Plan-Verwaltung */
+function openPlanManager(){
+  openSheet('Trainingspläne', (body) => {
+    const list = el('div');
+    function renderPlans(){
+      list.innerHTML = '';
+      if (!state.plans.length){
+        list.append(el('div', { class: 'sub', style: 'margin:8px 2px' },
+          'Mit Plänen startest du z. B. „Push", „Pull" oder „Beine" mit einem Tipp — die App merkt sich die Übungen samt Reihenfolge und füllt die Gewichte vom letzten Mal vor.'));
+        return;
+      }
+      const card = el('div', { class: 'card', style: 'padding:2px 12px' });
+      for (const p of [...state.plans].sort((a, b) => a.name.localeCompare(b.name, 'de'))){
+        card.append(el('button', { class: 'li', onclick: () => openPlanEditor(p.id, renderPlans) },
+          el('div', { class: 'grow' },
+            el('div', { class: 't' }, p.name),
+            el('div', { class: 's' },
+              p.exerciseIds.map(id => exById(id)?.name).filter(Boolean).join(', ') || 'noch leer — antippen zum Befüllen'))));
+      }
+      list.append(card);
+    }
+    body.append(list,
+      el('button', { class: 'btn primary block', style: 'margin-top:10px', onclick: async () => {
+        const name = await inputDlg('Wie soll der Plan heißen?', 'z. B. Push');
+        if (!name) return;
+        if (state.plans.some(pl => pl.name.toLowerCase() === name.toLowerCase())){
+          toast('Diesen Plan-Namen gibt es schon');
+          return;
+        }
+        const p = { id: uid(), name, exerciseIds: [], createdAt: Date.now(), lastUsedAt: null };
+        state.plans.push(p);
+        save();
+        renderPlans();
+        openPlanEditor(p.id, renderPlans);
+      } }, el('span', { html: IC.plus }), 'Neuer Plan'));
+    renderPlans();
+  }, () => renderCurrentView());
+}
+function openPlanEditor(planId, onChange){
+  const p = state.plans.find(x => x.id === planId);
+  if (!p) return;
+  openSheet('Plan: ' + p.name, (body, close) => {
+    const list = el('div', { class: 'card', style: 'padding:2px 12px' });
+    function renderList(){
+      list.innerHTML = '';
+      p.exerciseIds.forEach((exId, i) => {
+        const ex = exById(exId);
+        list.append(el('div', { class: 'li' },
+          el('div', { class: 'grow' }, el('div', { class: 't' }, ex ? ex.name : '(gelöschte Übung)')),
+          el('button', { class: 'btn small', 'aria-label': 'nach oben', onclick: () => {
+            if (i > 0){ p.exerciseIds.splice(i, 1); p.exerciseIds.splice(i - 1, 0, exId); save(); renderList(); }
+          } }, '▲'),
+          el('button', { class: 'btn small', 'aria-label': 'nach unten', onclick: () => {
+            if (i < p.exerciseIds.length - 1){ p.exerciseIds.splice(i, 1); p.exerciseIds.splice(i + 1, 0, exId); save(); renderList(); }
+          } }, '▼'),
+          el('button', { class: 'btn small danger', 'aria-label': 'entfernen', onclick: () => {
+            p.exerciseIds = p.exerciseIds.filter(x => x !== exId); save(); renderList();
+          } }, '✕')));
+      });
+      if (!p.exerciseIds.length) list.append(el('div', { class: 'chart-empty' }, 'Noch keine Übungen im Plan.'));
+    }
+    body.append(list);
+    body.append(el('button', { class: 'btn block', style: 'margin-top:8px', onclick: () => pickExerciseForPlan(p, renderList) },
+      el('span', { html: IC.plus }), 'Übung hinzufügen'));
+    body.append(el('button', { class: 'btn block', style: 'margin-top:8px', onclick: async () => {
+      const name = await inputDlg('Neuer Name für den Plan:', '', p.name);
+      if (!name || name === p.name) return;
+      if (state.plans.some(pl => pl.id !== p.id && pl.name.toLowerCase() === name.toLowerCase())){
+        toast('Diesen Plan-Namen gibt es schon');
+        return;
+      }
+      p.name = name; save(); close(); openPlanEditor(p.id, onChange);
+    } }, 'Umbenennen'));
+    body.append(el('button', { class: 'btn block danger', style: 'margin-top:8px', onclick: async () => {
+      if (await confirmDlg(`Plan „${p.name}" löschen? Deine Trainings bleiben erhalten.`, { okLabel: 'Löschen', danger: true })){
+        state.plans = state.plans.filter(x => x.id !== p.id);
+        save(); close();
+      }
+    } }, 'Plan löschen'));
+    body.append(el('button', { class: 'btn primary block', style: 'margin-top:14px', onclick: close }, 'Fertig'));
+  }, () => { if (onChange) onChange(); renderCurrentView(); });
+}
+function pickExerciseForPlan(p, done){
+  openSheet('Übung für den Plan', (body, close) => {
+    const inPlan = new Set(p.exerciseIds);
+    const search = el('input', { class: 'in', placeholder: 'Suchen oder neu anlegen …', autocomplete: 'off' });
+    const list = el('div', { class: 'card', style: 'padding:2px 12px' });
+    function renderList(){
+      const q = search.value.trim().toLowerCase();
+      list.innerHTML = '';
+      const items = state.exercises
+        .filter(e => !e.archived && (!q || e.name.toLowerCase().includes(q)))
+        .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+      for (const ex of items){
+        const added = inPlan.has(ex.id);
+        list.append(el('button', { class: 'li', onclick: () => {
+          if (added) return;
+          p.exerciseIds.push(ex.id); save(); close(); done();
+        } },
+          el('div', { class: 'grow' },
+            el('div', { class: 't', style: added ? 'color:var(--muted)' : '' }, ex.name),
+            added ? el('div', { class: 's' }, 'schon im Plan') : null)));
+      }
+      if (q){
+        for (const arch of state.exercises.filter(e => e.archived && e.name.toLowerCase().includes(q))){
+          list.append(el('button', { class: 'li', onclick: () => {
+            arch.archived = false;
+            if (!inPlan.has(arch.id)) p.exerciseIds.push(arch.id);
+            save(); close(); done();
+          } },
+            el('div', { class: 'grow' },
+              el('div', { class: 't' }, arch.name),
+              el('div', { class: 's' }, 'archiviert — antippen holt sie zurück'))));
+        }
+      }
+      if (q && !state.exercises.some(e => e.name.toLowerCase() === q)){
+        list.append(el('button', { class: 'li', onclick: () => {
+          const ex = { id: uid(), name: search.value.trim(), notes: '', restSec: null, archived: false,
+            createdAt: Date.now(), muscle: null, repLow: null, repHigh: null };
+          state.exercises.push(ex);
+          p.exerciseIds.push(ex.id);
+          save(); close(); done();
+        } },
+          el('div', { class: 'grow' },
+            el('div', { class: 't', style: 'color:var(--accent)' }, `„${search.value.trim()}" neu anlegen`))));
+      }
+      if (!list.children.length) list.append(el('div', { class: 'chart-empty' }, 'Nichts gefunden.'));
+    }
+    search.addEventListener('input', renderList);
+    body.append(search, list);
+    renderList();
+  });
 }
 
 /* Der Workout-Editor — für das laufende Training UND fürs Bearbeiten alter Trainings */
@@ -960,9 +1188,21 @@ function entryCard(wo, entry, live, refresh){
       } }, '✕')));
 
   if (prev){
-    card.append(el('div', { class: 'prev' },
+    card.append(el('button', { class: 'prev', onclick: () => ex && openExerciseHistory(ex.id, wo) },
       'Letztes Mal (' + fmtShort(prev.date) + '): ' +
-      prev.sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ')));
+      prev.sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ') + '  ›'));
+  }
+  /* Steigerungs-Vorschlag, solange noch kein Satz abgehakt ist */
+  const sugg = ex ? progressionSuggestion(ex, prev) : null;
+  if (sugg && !entry.sets.some(s => s.done)){
+    card.append(el('button', { class: 'suggest', onclick: () => {
+      for (const s of entry.sets){
+        if (!s.done){ s.w = sugg.w; if (ex.repLow) s.r = ex.repLow; }
+      }
+      save(); refresh();
+      toast('Vorschlag übernommen: ' + fmtNum(sugg.w) + ' kg');
+    } },
+      `▲ Vorschlag: heute ${fmtNum(sugg.w)} kg probieren — letztes Mal überall ${ex.repHigh} Wdh. geschafft. (Antippen zum Übernehmen)`));
   }
 
   card.append(el('div', { class: 'sethead' },
@@ -982,6 +1222,10 @@ function entryCard(wo, entry, live, refresh){
         done: false, ts: null });
       save(); refresh();
     } }, el('span', { html: IC.plus }), 'Satz'),
+    el('button', { class: 'btn small', 'aria-label': 'Übung nach oben schieben',
+      onclick: () => moveEntry(wo, entry, -1, refresh) }, '▲'),
+    el('button', { class: 'btn small', 'aria-label': 'Übung nach unten schieben',
+      onclick: () => moveEntry(wo, entry, 1, refresh) }, '▼'),
     noteIn));
   return card;
 }
@@ -989,28 +1233,145 @@ function restFor(entry){
   const ex = exById(entry.exerciseId);
   return (ex && ex.restSec) || state.settings.restSec;
 }
+/* Übung innerhalb des Trainings verschieben */
+function moveEntry(wo, entry, dir, refresh){
+  const i = wo.entries.indexOf(entry);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= wo.entries.length) return;
+  wo.entries[i] = wo.entries[j];
+  wo.entries[j] = entry;
+  save(); refresh();
+}
+/* Steigerungs-Vorschlag: letztes Mal überall das obere Wdh.-Ziel geschafft → mehr Gewicht */
+function progressionSuggestion(ex, prev){
+  if (!ex || !ex.repHigh || !prev || !prev.sets.length) return null;
+  if (!prev.sets.every(s => s.r >= ex.repHigh)) return null;
+  const maxW = Math.max(...prev.sets.map(s => s.w));
+  return { w: Math.round((maxW + 2.5) * 100) / 100 };
+}
+/* Kleine Historie: die letzten 5 Einheiten einer Übung, ohne das Training zu verlassen */
+function openExerciseHistory(exId, wo){
+  const ex = exById(exId);
+  if (!ex) return;
+  openSheet(ex.name + ' — letzte Einheiten', body => {
+    const list = sortedWorkouts();
+    let idx = list.findIndex(w => w.id === wo.id);
+    if (idx === -1) idx = list.length;
+    const rows = [];
+    for (let i = idx - 1; i >= 0 && rows.length < 5; i--){
+      if (!list[i].finishedAt) continue;
+      const sets = setsOf(list[i], exId);
+      if (!sets.length) continue;
+      const notes = list[i].entries.filter(en => en.exerciseId === exId && en.note).map(en => en.note);
+      rows.push({ date: list[i].date, sets, note: notes.join(' · ') });
+    }
+    if (!rows.length){
+      body.append(el('div', { class: 'chart-empty' }, 'Noch keine früheren Einheiten mit dieser Übung.'));
+      return;
+    }
+    for (const r of rows){
+      body.append(el('div', { class: 'card', style: 'padding:10px 12px' },
+        el('div', { style: 'font-weight:650' }, fmtFull(r.date)),
+        el('div', { class: 'sub', style: 'margin-top:3px' }, r.sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ')),
+        r.note ? el('div', { class: 'sub', style: 'margin-top:3px;font-style:italic' }, '„' + r.note + '"') : null));
+    }
+  });
+}
+/* Schnellknopf-Leiste (Steppern) unter dem angetippten Eingabefeld */
+let openStrip = null;
+function closeStrip(){
+  if (openStrip){ openStrip.el.remove(); openStrip = null; }
+}
+document.addEventListener('pointerdown', e => {
+  if (openStrip && !openStrip.el.contains(e.target) && !openStrip.owner.contains(e.target)) closeStrip();
+}, true);
+function openStripFor(row, s, kind, input, pv){
+  closeStrip();
+  const strip = el('div', { class: 'stepstrip' });
+  function bump(d){
+    if (kind === 'w'){
+      const base = s.w !== null ? s.w : (pv && pv.w !== null && pv.w !== undefined ? pv.w : 0);
+      s.w = Math.max(0, Math.round((base + d) * 100) / 100);
+      input.value = fmtInput(s.w);
+    } else {
+      const base = s.r !== null ? s.r : (pv && pv.r !== null && pv.r !== undefined ? pv.r : 0);
+      const v = Math.max(0, base + d);
+      s.r = v > 0 ? v : null;
+      input.value = s.r === null ? '' : String(s.r);
+    }
+    /* Wird ein abgehakter Satz ungültig gemacht, sichtbar wieder öffnen */
+    if (s.done && (s.r === null || s.r <= 0 || s.w === null)){
+      s.done = false;
+      row.classList.remove('done');
+    }
+    input.classList.remove('err');
+    saveSoon();
+  }
+  const useKb = () => {
+    closeStrip();
+    input.readOnly = false;
+    input.focus();
+    setTimeout(() => { try { input.select(); } catch (e) {} }, 0);
+  };
+  if (kind === 'w'){
+    strip.append(
+      el('button', { class: 'stepbtn', onclick: () => bump(-2.5) }, '−2,5'),
+      el('button', { class: 'stepbtn plus', onclick: () => bump(2.5) }, '+2,5'),
+      el('button', { class: 'stepbtn kb', onclick: useKb }, 'Tastatur'));
+  } else {
+    strip.append(
+      el('button', { class: 'stepbtn', onclick: () => bump(-1) }, '−1'),
+      el('button', { class: 'stepbtn plus', onclick: () => bump(1) }, '+1'),
+      el('button', { class: 'stepbtn kb', onclick: useKb }, 'Tastatur'));
+  }
+  row.after(strip);
+  openStrip = { el: strip, owner: row };
+}
 function setRow(wo, entry, s, i, live, prev, refresh){
   const pv = prev ? prev.sets[i] : null;
   const row = el('div', { class: 'set' + (s.done ? ' done' : '') });
   let wAtFocus = null, jumpT = null;
+  /* Felder starten im Schnellknopf-Modus (keine Tastatur); „Tastatur" schaltet zum Tippen um */
   const wIn = el('input', { class: 'in', inputmode: 'decimal', autocomplete: 'off', enterkeyhint: 'next',
     value: fmtInput(s.w), placeholder: pv ? fmtInput(pv.w) : 'kg',
-    onfocus: e => { wAtFocus = e.target.value; setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
-    onblur: () => clearTimeout(jumpT),
+    onclick: () => { if (wIn.readOnly) openStripFor(row, s, 'w', wIn, pv); },
+    onfocus: e => { wAtFocus = e.target.value;
+      if (!wIn.readOnly) setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
+    onblur: () => { clearTimeout(jumpT);
+      setTimeout(() => { if (document.activeElement !== wIn) wIn.readOnly = true; }, 150); },
+    onkeydown: e => { if (e.key === 'Enter'){ e.preventDefault(); rIn.readOnly = false; rIn.focus(); } },
     oninput: e => {
-      s.w = parseNum(e.target.value); e.target.classList.remove('err'); saveSoon();
-      /* Kurz nach der letzten Ziffer automatisch zu den Wiederholungen springen */
+      s.w = parseNum(e.target.value);
+      if (s.done && s.w === null){ s.done = false; row.classList.remove('done'); }
+      e.target.classList.remove('err'); saveSoon();
+      /* Nach kurzer Tipp-Pause zu den Wiederholungen springen — aber nur, wenn dort noch nichts steht
+         und die Zahl nicht mitten in einer Komma-Eingabe steckt */
       clearTimeout(jumpT);
       jumpT = setTimeout(() => {
-        if (document.activeElement === wIn && s.w !== null && wIn.value && wIn.value !== wAtFocus) rIn.focus();
-      }, 1000);
+        if (document.activeElement === wIn && s.w !== null && wIn.value && wIn.value !== wAtFocus
+            && s.r === null && !/[.,]$/.test(wIn.value)){
+          rIn.readOnly = false;
+          rIn.focus();
+          if (document.activeElement !== rIn)
+            requestAnimationFrame(() => { try { rIn.focus(); } catch (err) {} });
+        }
+      }, 800);
     } });
   const rIn = el('input', { class: 'in', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'done',
     value: s.r === null || s.r === undefined ? '' : String(s.r), placeholder: pv ? String(pv.r) : 'Wdh.',
-    onfocus: e => { setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
-    oninput: e => { s.r = parseInt0(e.target.value); e.target.classList.remove('err'); saveSoon(); } });
+    onclick: () => { if (rIn.readOnly) openStripFor(row, s, 'r', rIn, pv); },
+    onfocus: e => { if (!rIn.readOnly) setTimeout(() => { try { e.target.select(); } catch (err) {} }, 0); },
+    onblur: () => { setTimeout(() => { if (document.activeElement !== rIn) rIn.readOnly = true; }, 150); },
+    oninput: e => {
+      s.r = parseInt0(e.target.value);
+      if (s.done && (s.r === null || s.r <= 0)){ s.done = false; row.classList.remove('done'); }
+      e.target.classList.remove('err'); saveSoon();
+    } });
+  wIn.readOnly = true;
+  rIn.readOnly = true;
   const chk = el('button', { class: 'chk', html: IC.check, 'aria-label': 'Satz abhaken' });
   chk.addEventListener('click', () => {
+    closeStrip();
     if (!s.done){
       if (s.w === null && pv){ s.w = pv.w; wIn.value = fmtInput(pv.w); }
       if ((s.r === null || s.r <= 0) && pv){ s.r = pv.r; rIn.value = String(pv.r); }
@@ -1019,14 +1380,12 @@ function setRow(wo, entry, s, i, live, prev, refresh){
       if (s.r === null || s.r <= 0){ rIn.classList.add('err'); bad = true; }
       if (bad){ toast('Bitte Gewicht und Wiederholungen eintragen'); return; }
       s.done = true; s.ts = Date.now();
-      row.classList.add('done');
       if (live) startRest(restFor(entry), exById(entry.exerciseId)?.name || '');
       vib(30);
     } else {
       s.done = false;
-      row.classList.remove('done');
     }
-    save();
+    save(); refresh();
   });
   row.append(
     el('span', { class: 'idx' }, String(i + 1)),
@@ -1090,6 +1449,11 @@ async function finishWorkout(wo){
   }
   wo.entries = plan.filter(p => p.en.sets.length > 0).map(p => p.en);
   wo.finishedAt = Date.now();
+  /* Plan-Stempel „zuletzt benutzt" erst beim erfolgreichen Beenden (zählt auch Vorlagen-Wiederholungen) */
+  if (wo.planName){
+    const pl = state.plans.find(x => x.name.toLowerCase() === wo.planName.toLowerCase());
+    if (pl) pl.lastUsedAt = Date.now();
+  }
   state.activeWorkoutId = null;
   stopTimer(); save(); syncWakeLock();
   renderBanner(); renderTraining();
@@ -1141,6 +1505,18 @@ function openWorkoutSummary(wo){
     body.append(el('div', { class: 'sub', style: 'margin:8px 2px' },
       'Der Pfeil vergleicht deine geschätzte Maximalkraft (aus Gewicht × Wiederholungen) mit der letzten Einheit derselben Übung.'));
     body.append(el('button', { class: 'btn primary block', style: 'margin-top:8px', onclick: close }, 'Fertig'));
+    body.append(el('button', { class: 'btn ghost block', style: 'margin-top:8px;color:var(--muted)', onclick: async () => {
+      const name = await inputDlg('Name für den Plan:', 'z. B. Push', wo.planName || '');
+      if (!name) return;
+      const ids = [];
+      const seenIds = new Set();
+      for (const en of wo.entries)
+        if (!seenIds.has(en.exerciseId) && exById(en.exerciseId)){ seenIds.add(en.exerciseId); ids.push(en.exerciseId); }
+      const existing = state.plans.find(pl => pl.name.toLowerCase() === name.toLowerCase());
+      if (existing){ existing.exerciseIds = ids; toast('Plan „' + existing.name + '" aktualisiert'); }
+      else { state.plans.push({ id: uid(), name, exerciseIds: ids, createdAt: Date.now(), lastUsedAt: Date.now() }); toast('Plan „' + name + '" angelegt'); }
+      save(); renderCurrentView();
+    } }, 'Als Plan speichern …'));
     body.append(el('button', { class: 'btn ghost block', style: 'margin-top:8px;color:var(--muted)',
       onclick: exportData }, 'Sicherung speichern …'));
   });
@@ -1180,7 +1556,8 @@ function openExercisePicker(wo, refresh){
       }
       if (q && !state.exercises.some(e => e.name.toLowerCase() === q)){
         list.append(el('button', { class: 'li', onclick: () => {
-          const ex = { id: uid(), name: search.value.trim(), notes: '', restSec: null, archived: false, createdAt: Date.now() };
+          const ex = { id: uid(), name: search.value.trim(), notes: '', restSec: null, archived: false,
+            createdAt: Date.now(), muscle: null, repLow: null, repHigh: null };
           state.exercises.push(ex); save(); addEntry(ex.id);
         } },
           el('div', { class: 'grow' },
@@ -1229,6 +1606,7 @@ function renderUebungen(){
       const rec = exerciseRecord(ex.id);
       const used = lu.get(ex.id);
       const subs = [];
+      if (ex.muscle) subs.push(ex.muscle);
       if (used) subs.push('Zuletzt: ' + fmtFull(used));
       if (rec) subs.push('Rekord: ' + fmtNum(rec.w) + ' kg × ' + rec.r);
       if (ex.archived) subs.push('archiviert');
@@ -1247,7 +1625,8 @@ function renderUebungen(){
 function openExerciseEditor(exId){
   const isNew = !exId;
   const ex = isNew
-    ? { id: uid(), name: '', notes: '', restSec: null, archived: false, createdAt: Date.now() }
+    ? { id: uid(), name: '', notes: '', restSec: null, archived: false, createdAt: Date.now(),
+        muscle: null, repLow: null, repHigh: null }
     : exById(exId);
   if (!ex) return;
   openSheet(isNew ? 'Neue Übung' : ex.name, (body, close) => {
@@ -1256,8 +1635,17 @@ function openExerciseEditor(exId){
     notesIn.value = ex.notes || '';
     const restIn = el('input', { class: 'in', inputmode: 'numeric', value: ex.restSec ?? '',
       placeholder: 'Standard: ' + state.settings.restSec + ' s' });
+    const muscleSel = el('select', { class: 'in' },
+      el('option', { value: '' }, 'Nicht zugeordnet'),
+      MUSCLES.map(m => el('option', { value: m }, m)));
+    muscleSel.value = ex.muscle || '';
+    const repLowIn = el('input', { class: 'in', inputmode: 'numeric', value: ex.repLow ?? '', placeholder: 'von' });
+    const repHighIn = el('input', { class: 'in', inputmode: 'numeric', value: ex.repHigh ?? '', placeholder: 'bis' });
     body.append(
       el('label', { class: 'f' }, el('span', {}, 'Name'), nameIn),
+      el('label', { class: 'f' }, el('span', {}, 'Muskelgruppe (für die Statistik)'), muscleSel),
+      el('label', { class: 'f' }, el('span', {}, 'Ziel-Wiederholungen (z. B. 8 bis 12 — für Steigerungs-Vorschläge)'),
+        el('div', { class: 'row' }, repLowIn, el('span', { class: 'sub' }, 'bis'), repHighIn)),
       el('label', { class: 'f' }, el('span', {}, 'Notizen zur Übung (immer sichtbar)'), notesIn),
       el('label', { class: 'f' }, el('span', {}, 'Pausenzeit in Sekunden (leer = Standard)'), restIn),
     );
@@ -1272,6 +1660,11 @@ function openExerciseEditor(exId){
       ex.notes = notesIn.value.trim();
       const rs = parseInt0(restIn.value);
       ex.restSec = rs && rs > 0 ? rs : null;
+      ex.muscle = muscleSel.value || null;
+      const rl = parseInt0(repLowIn.value), rh = parseInt0(repHighIn.value);
+      ex.repLow = rl && rl > 0 ? rl : null;
+      ex.repHigh = rh && rh > 0 ? rh : null;
+      if (ex.repLow && ex.repHigh && ex.repLow > ex.repHigh){ const t = ex.repLow; ex.repLow = ex.repHigh; ex.repHigh = t; }
       if (isNew) state.exercises.push(ex);
       save(); close(); renderCurrentView();
     } }, 'Speichern'));
@@ -1324,7 +1717,9 @@ function renderVerlauf(){
         el('b', {}, w.date.slice(8, 10)),
         el('span', {}, WD[parseKey(w.date).getDay()])),
       el('div', { class: 'grow' },
-        el('div', { class: 't' }, `${plural(st.exn, 'Übung', 'Übungen')} · ${plural(st.sets, 'Satz', 'Sätze')}` + (running ? ' · läuft' : '')),
+        el('div', { class: 't' },
+          (w.planName ? w.planName : plural(st.exn, 'Übung', 'Übungen')) +
+          ` · ${plural(st.sets, 'Satz', 'Sätze')}` + (running ? ' · läuft' : '')),
         el('div', { class: 's' }, fmtNum(st.vol, 0) + ' kg' + (w.note ? ' · ' + w.note : ''))));
     monthCard.append(row);
   }
@@ -1357,7 +1752,7 @@ function openWorkoutSheet(woId){
         close();
         openSheet('Training vom ' + fmtFull(w.date) + ' bearbeiten', (b2) => {
           renderWorkoutEditor(b2, w, { live: false });
-        });
+        }, () => renderCurrentView());
       } }, 'Bearbeiten'));
       if (!state.activeWorkoutId){
         actions.append(el('button', { class: 'btn block', onclick: () => {
@@ -1453,6 +1848,54 @@ function renderStatsOverview(host, cutoff){
   host.append(el('div', { class: 'sub', style: 'margin:2px 4px' },
     'Volumen = Gewicht × Wiederholungen, über alle Sätze zusammengezählt.'));
 
+  /* Sätze je Muskelgruppe */
+  const MUSCLE_SHORT = { 'Brust': 'Brust', 'Rücken': 'Rück.', 'Schultern': 'Schul.', 'Arme': 'Arme',
+    'Beine': 'Beine', 'Rumpf': 'Rumpf', 'Sonstiges': 'Sonst.', 'Ohne': 'Ohne' };
+  const groups = new Map();
+  for (const w of wos)
+    for (const en of w.entries){
+      const vs = validSets(en);
+      if (!vs.length) continue;
+      const ex = exById(en.exerciseId);
+      const g = (ex && ex.muscle) || 'Ohne';
+      groups.set(g, (groups.get(g) || 0) + vs.length);
+    }
+  if (groups.size){
+    host.append(el('div', { class: 'h2' }, 'Sätze je Muskelgruppe'));
+    const mcard = el('div', { class: 'card' });
+    host.append(mcard);
+    const order = [...MUSCLES, 'Ohne'];
+    const mbars = order.filter(g => groups.has(g))
+      .map(g => ({ label: MUSCLE_SHORT[g] || g, full: g, value: groups.get(g) }));
+    drawBarChart(mcard, mbars, { unit: 'Sätze', allLabels: true });
+    if (groups.has('Ohne'))
+      host.append(el('div', { class: 'sub', style: 'margin:2px 4px' },
+        '„Ohne" = Übungen ohne Muskelgruppe. Zuordnen kannst du sie im Reiter Übungen.'));
+  }
+
+  /* Rekord-Übersicht (alle Zeiten) */
+  const recs = [];
+  for (const ex of state.exercises){
+    const r = exerciseRecord(ex.id);
+    if (r) recs.push({ ex, r });
+  }
+  if (recs.length){
+    recs.sort((a, b) => b.r.date.localeCompare(a.r.date));
+    host.append(el('div', { class: 'h2' }, 'Rekorde (alle Zeiten)'));
+    const rcard = el('div', { class: 'card', style: 'padding:2px 12px' });
+    const cut30 = dateKey(new Date(Date.now() - 30 * 864e5));
+    for (const { ex, r } of recs){
+      rcard.append(el('button', { class: 'li', onclick: () => {
+        state.ui.statsExercise = ex.id; save(); renderStatistik(); window.scrollTo(0, 0);
+      } },
+        el('div', { class: 'grow' },
+          el('div', { class: 't' }, ex.name),
+          el('div', { class: 's' }, fmtNum(r.w) + ' kg × ' + r.r + ' · ' + fmtFull(r.date))),
+        r.date >= cut30 ? el('span', { class: 'chip rec' }, 'neu') : null));
+    }
+    host.append(rcard);
+  }
+
   /* Tabelle der Trainings */
   host.append(el('div', { class: 'h2' }, 'Alle Trainings im Zeitraum'));
   const tcard = el('div', { class: 'card', style: 'overflow-x:auto' });
@@ -1492,6 +1935,20 @@ function renderStatsExercise(host, exId, cutoff){
     tile('Bestes e1RM', bestE1 ? fmtNum(bestE1.v) : '–', bestE1 ? 'kg · ' + fmtShort(bestE1.date) : 'kg'),
     tile('Letzte Einheit', last ? fmtNum(last.best) : '–', last ? 'kg · ' + fmtShort(last.date) : '')));
 
+  /* Damals und heute: Vergleich mit der Einheit vor ~12/6/3 Monaten */
+  const cmp = thenComparison(exId);
+  if (cmp){
+    const d = Math.round((cmp.today.m.e1 - cmp.then.m.e1) * 10) / 10;
+    host.append(el('div', { class: 'card', style: 'padding:11px 12px' },
+      el('div', { class: 'row' },
+        el('div', { class: 'grow', style: 'font-weight:700' }, 'Damals und heute'),
+        d > 0.05 ? el('span', { class: 'chip up' }, '▲ +' + fmtNum(d) + ' kg')
+          : d < -0.05 ? el('span', { class: 'chip down' }, '▼ ' + fmtNum(d) + ' kg')
+          : el('span', { class: 'chip' }, '= gehalten')),
+      el('div', { class: 'sub', style: 'margin-top:4px' },
+        `${cmp.label} (${fmtFull(cmp.then.date)}): e1RM ${fmtNum(cmp.then.m.e1)} kg — zuletzt (${fmtFull(cmp.today.date)}): ${fmtNum(cmp.today.m.e1)} kg`)));
+  }
+
   /* Metrik-Schalter + Liniendiagramm */
   const seg = el('div', { class: 'seg', style: 'margin-top:2px' },
     Object.entries(METRICS).map(([k, m]) =>
@@ -1517,7 +1974,11 @@ function renderStatsExercise(host, exId, cutoff){
   }
   const pts = [...byDate.values()].map(r => ({ x: parseKey(r.date).getTime(), date: r.date, y: metric.get(r) }))
     .filter(p => p.y !== null && p.y !== undefined);
-  drawLineChart(card, pts, metric);
+  if (!pts.length && rec){
+    card.append(el('div', { class: 'chart-empty' }, 'Keine Einheiten im gewählten Zeitraum — oben einen längeren Zeitraum wählen.'));
+  } else {
+    drawLineChart(card, pts, metric);
+  }
 
   if (state.ui.statsMetric === 'e1'){
     host.append(el('div', { class: 'sub', style: 'margin:2px 4px' },
@@ -1526,6 +1987,28 @@ function renderStatsExercise(host, exId, cutoff){
   if (state.ui.statsMetric === 'vol'){
     host.append(el('div', { class: 'sub', style: 'margin:2px 4px' },
       'Volumen = Gewicht × Wiederholungen, über alle Sätze zusammengezählt.'));
+  }
+
+  /* Bestleistung je Wiederholungszahl */
+  const repPR = new Map();
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    for (const s of setsOf(w, exId))
+      if (!repPR.has(s.r) || s.w > repPR.get(s.r).w) repPR.set(s.r, { w: s.w, date: w.date });
+  }
+  if (repPR.size){
+    host.append(el('div', { class: 'h2' }, 'Bestwert je Wiederholungszahl (alle Zeiten)'));
+    const pcard = el('div', { class: 'card', style: 'overflow-x:auto' });
+    const ptbl = el('table', { class: 'datatable' },
+      el('thead', {}, el('tr', {}, el('th', {}, 'Wdh.'), el('th', {}, 'Gewicht'), el('th', {}, 'Datum'))));
+    const ptb = el('tbody');
+    for (const [r, v] of [...repPR.entries()].sort((a, b) => a[0] - b[0])){
+      ptb.append(el('tr', {},
+        el('td', {}, '× ' + r),
+        el('td', {}, fmtNum(v.w) + ' kg'),
+        el('td', {}, fmtFull(v.date))));
+    }
+    ptbl.append(ptb); pcard.append(ptbl); host.append(pcard);
   }
 
   /* Tabelle */
@@ -1544,6 +2027,31 @@ function renderStatsExercise(host, exId, cutoff){
   }
   if (!rows.length) tb.append(el('tr', {}, el('td', { colspan: '4', style: 'color:var(--muted)' }, 'Keine Einheiten im Zeitraum.')));
   tbl.append(tb); tcard.append(tbl); host.append(tcard);
+}
+/* Vergleich mit der Einheit vor ~12, 6 oder 3 Monaten (was zuerst passt) */
+function thenComparison(exId){
+  const windows = [[365, 'Vor einem Jahr'], [180, 'Vor 6 Monaten'], [90, 'Vor 3 Monaten']];
+  const sessions = [];
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    const m = sessionMetrics(w, exId);
+    if (m) sessions.push({ date: w.date, m });
+  }
+  if (sessions.length < 2) return null;
+  const today = sessions[sessions.length - 1];
+  const anchor = parseKey(today.date).getTime();
+  for (const [days, label] of windows){
+    const tol = Math.max(21, days * 0.15);
+    let best = null;
+    for (const s2 of sessions){
+      if (s2 === today) continue;
+      const age = (anchor - parseKey(s2.date).getTime()) / 864e5;
+      const off = Math.abs(age - days);
+      if (age > 0 && off <= tol && (!best || off < best.off)) best = { s: s2, off };
+    }
+    if (best) return { label, then: best.s, today };
+  }
+  return null;
 }
 function tile(label, value, sub){
   return el('div', { class: 'tile' },
@@ -1675,7 +2183,7 @@ function drawLineChart(card, pts, metric){
   hit.addEventListener('pointerdown', e => showTip(e.clientX));
   hit.addEventListener('pointerleave', () => { tip.style.display = 'none'; cross.setAttribute('opacity', 0); });
 }
-function drawBarChart(card, bars, { unit }){
+function drawBarChart(card, bars, { unit, allLabels }){
   const H = 210;
   const { wrap, svg, tip, W } = chartFrame(card, H);
   if (!bars.length){
@@ -1696,7 +2204,7 @@ function drawBarChart(card, bars, { unit }){
     lab.textContent = fmtNum(tv, dec);
     svg.append(lab);
   }
-  const step = Math.max(1, Math.ceil(bars.length / 6));
+  const step = allLabels ? 1 : Math.max(1, Math.ceil(bars.length / 6));
   bars.forEach((b, i) => {
     const cx = pad.l + band * i + band / 2;
     const y = Y(b.value), y0 = Y(lo);
@@ -1724,7 +2232,7 @@ function drawBarChart(card, bars, { unit }){
     const b = bars[i];
     const cx = pad.l + band * i + band / 2;
     tip.innerHTML = '';
-    tip.append(el('b', {}, fmtNum(b.value, 0) + ' ' + unit), b.label);
+    tip.append(el('b', {}, fmtNum(b.value, 0) + ' ' + unit), b.full || b.label);
     tip.style.display = 'block';
     tip.style.left = Math.max(52, Math.min(cx / W * rect.width, rect.width - 52)) + 'px';
     tip.style.top = Math.max(0, Y(b.value) / H * rect.height - 56) + 'px';
@@ -1749,7 +2257,10 @@ function markBackup(){
   save(); renderBanner();
 }
 async function exportData(){
-  const json = JSON.stringify(state, null, 1);
+  /* Die Datei trägt einen frischen Sicherungs-Stempel — wichtig, falls sie später per „Ersetzen" geladen wird */
+  const json = JSON.stringify(
+    { ...state, meta: { ...state.meta, lastBackupAt: Date.now(), workoutsAtBackup: finishedCount() } },
+    null, 1);
   const name = 'eisenbuch-sicherung-' + dateKey(new Date()) + '.json';
   const dl = await getDownloads();
   if (dl){
@@ -1781,23 +2292,74 @@ async function exportData(){
     } }, 'Alles kopieren'));
   });
 }
+/* Sicherung ZUSAMMENFÜHREN: ergänzt nur, was auf dem Gerät fehlt — nichts geht verloren */
+function mergeBackup(obj){
+  const imp = migrate(JSON.parse(JSON.stringify(obj)));
+  const nameKey = s => s.trim().toLowerCase();
+  const byId = new Map(state.exercises.map(e => [e.id, e]));
+  const byName = new Map(state.exercises.map(e => [nameKey(e.name), e]));
+  const remap = new Map();
+  let exAdded = 0;
+  for (const ex of imp.exercises){
+    if (byId.has(ex.id)) continue;
+    const match = byName.get(nameKey(ex.name));
+    if (match) remap.set(ex.id, match.id);
+    else { state.exercises.push(ex); byId.set(ex.id, ex); byName.set(nameKey(ex.name), ex); exAdded++; }
+  }
+  const haveW = new Set(state.workouts.map(w => w.id));
+  let woAdded = 0;
+  for (const w of imp.workouts){
+    if (haveW.has(w.id)) continue;
+    /* auch angefangene Trainings mitnehmen, sofern sie echte Sätze enthalten */
+    if (!w.finishedAt && !w.entries.some(en => validSets(en).length)) continue;
+    for (const en of w.entries)
+      if (remap.has(en.exerciseId)) en.exerciseId = remap.get(en.exerciseId);
+    state.workouts.push(w); woAdded++;
+  }
+  const haveP = new Set(state.plans.map(p => p.id));
+  const havePName = new Set(state.plans.map(p => p.name.trim().toLowerCase()));
+  for (const p of imp.plans){
+    if (haveP.has(p.id) || havePName.has(p.name.trim().toLowerCase())) continue;
+    p.exerciseIds = p.exerciseIds.map(id => remap.get(id) || id).filter(id => byId.has(id));
+    state.plans.push(p);
+    havePName.add(p.name.trim().toLowerCase());
+  }
+  save();
+  return { woAdded, exAdded };
+}
 function importFromObj(obj, close){
   if (!obj || typeof obj !== 'object' || !Array.isArray(obj.exercises) || !Array.isArray(obj.workouts)){
     toast('Das ist keine gültige Eisenbuch-Sicherung');
     return;
   }
-  const n = obj.workouts.filter(w => w.finishedAt).length;
+  const n = obj.workouts.filter(w => w && w.finishedAt).length;
   const when = obj.meta && obj.meta.updatedAt ? fmtFull(dateKey(new Date(obj.meta.updatedAt))) : 'unbekannt';
-  confirmDlg(`Sicherung (${plural(n, 'Training', 'Trainings')}, Stand ${when}) laden? Die aktuellen Daten auf diesem Gerät werden ersetzt.`,
-    { okLabel: 'Laden', danger: true }).then(ok => {
-    if (!ok) return;
-    state = migrate(obj);
-    state.activeWorkoutId = state.workouts.some(w => w.id === state.activeWorkoutId) && state.activeWorkoutId || null;
-    state.timer = null;
-    save();
-    if (close) close();
-    renderBanner(); renderCurrentView(); renderTimer();
-    toast('Sicherung geladen');
+  choiceDlg(`Sicherung gefunden: ${plural(n, 'Training', 'Trainings')}, Stand ${when}. Wie laden?`, [
+    { label: 'Zusammenführen (empfohlen)', value: 'merge', cls: 'primary' },
+    { label: 'Alles ersetzen (Gerätestand geht verloren)', value: 'replace', cls: 'danger' },
+    { label: 'Abbrechen', value: null },
+  ]).then(mode => {
+    if (mode === 'merge'){
+      const res = mergeBackup(obj);
+      if (close) close();
+      renderBanner(); renderCurrentView(); renderTimer();
+      toast(res.woAdded || res.exAdded
+        ? `${plural(res.woAdded, 'Training', 'Trainings')} und ${plural(res.exAdded, 'Übung', 'Übungen')} ergänzt`
+        : 'Nichts zu ergänzen — alles schon da');
+    } else if (mode === 'replace'){
+      const deviceLoads = state.meta.loads || 0;
+      state = migrate(obj);
+      state.activeWorkoutId = state.workouts.some(w => w.id === state.activeWorkoutId) && state.activeWorkoutId || null;
+      state.timer = null;
+      state.meta.loads = deviceLoads;
+      /* Der geladene Stand liegt in diesem Moment nachweislich als Datei vor → gilt als gesichert */
+      state.meta.lastBackupAt = Date.now();
+      state.meta.workoutsAtBackup = finishedCount();
+      save();
+      if (close) close();
+      renderBanner(); renderCurrentView(); renderTimer();
+      toast('Sicherung geladen');
+    }
   });
 }
 function openImport(){
@@ -1885,7 +2447,7 @@ function openSettings(){
 
     const created = state.meta.createdAt ? fmtFull(dateKey(new Date(state.meta.createdAt))) : '';
     body.append(el('div', { class: 'sub', style: 'margin-top:16px;text-align:center' },
-      'Eisenbuch · dein privates Trainings-Logbuch' + (created ? ' · dabei seit ' + created : '')));
+      'Eisenbuch Version ' + APP_VERSION + ' · dein privates Trainings-Logbuch' + (created ? ' · dabei seit ' + created : '')));
   });
 }
 
