@@ -297,7 +297,7 @@ video.scanvid{ width:100%; max-height:46vh; border-radius:14px; background:#000;
    ========================================================================= */
 
 /* ---------- kleine Helfer ---------- */
-const APP_VERSION = '3.0';
+const APP_VERSION = '3.2';
 const $ = s => document.querySelector(s);
 function el(tag, attrs = {}, ...kids){
   const n = document.createElement(tag);
@@ -388,6 +388,7 @@ function defaultState(){
     plans: [],
     foods: [],
     days: {},
+    supps: [],
     activeWorkoutId: null,
     timer: null,
     ui: { statsExercise: 'all', statsRange: 90, statsMetric: 'e1', welcomeDismissed: false },
@@ -508,6 +509,18 @@ function migrate(st){
       }));
     if (entries.length) st.days[dk] = { entries };
   }
+  /* Supplemente normalisieren */
+  st.supps = (Array.isArray(st.supps) ? st.supps : [])
+    .filter(s => s && typeof s === 'object' && typeof s.name === 'string' && s.name.trim())
+    .map(s => ({
+      id: String(s.id || uid()), name: s.name,
+      dose: typeof s.dose === 'string' ? s.dose : '',
+      timing: (Array.isArray(s.timing) ? s.timing : []).filter(t => typeof t === 'string' && t.trim()),
+      note: typeof s.note === 'string' ? s.note : '',
+      paused: !!s.paused,
+      sinceAt: Number.isFinite(s.sinceAt) ? s.sinceAt : Date.now(),
+      createdAt: Number.isFinite(s.createdAt) ? s.createdAt : Date.now(),
+    }));
   st.activeWorkoutId = st.workouts.some(w => w.id === st.activeWorkoutId) ? st.activeWorkoutId : null;
   st.timer = (st.timer && typeof st.timer === 'object' && Number.isFinite(st.timer.endAt)) ? st.timer : null;
   st.version = 1;
@@ -963,16 +976,43 @@ function renderCurrentView(){
 /* =========================================================================
    Ansicht: TRAINING
    ========================================================================= */
+/* Startseite anzeigen, obwohl ein Training läuft (Training läuft im Hintergrund weiter) */
+let showStartDespiteActive = false;
 function renderTraining(){
   const host = $('#view-training');
   host.innerHTML = '';
   const wo = activeWorkout();
-  if (!wo){ renderTrainingStart(host); return; }
+  if (!wo){ showStartDespiteActive = false; renderTrainingStart(host); return; }
+  if (showStartDespiteActive){ renderTrainingStart(host); return; }
   renderWorkoutEditor(host, wo, { live: true });
+}
+/* Läuft schon ein Training? Dann nicht doppelt starten, sondern zurückführen */
+function guardActiveWorkout(){
+  const act = activeWorkout();
+  if (!act) return false;
+  confirmDlg('Es läuft noch ein Training. Zurück zum laufenden Training?', { okLabel: 'Fortsetzen' })
+    .then(ok => { if (ok){ showStartDespiteActive = false; showView('training'); } });
+  return true;
 }
 function renderTrainingStart(host){
   const today = dateKey(new Date());
   host.append(el('div', { class: 'h1' }, 'Heute'), el('div', { class: 'sub' }, fmtDay(today)));
+
+  /* Läuft gerade ein Training? Auffällige Weiter-Karte ganz oben */
+  const act = activeWorkout();
+  if (act){
+    const ast = workoutStats(act);
+    host.append(el('div', { class: 'card', style: 'border-color:rgba(57,135,229,.55)' },
+      el('div', { class: 'row' },
+        el('div', { class: 'grow' },
+          el('div', { style: 'font-weight:700' },
+            (act.planName ? act.planName + ' — ' : '') + 'Training läuft' + trainDuration(act)),
+          el('div', { class: 'sub', style: 'margin-top:2px' },
+            plural(ast.sets, 'Satz', 'Sätze') + ' erfasst — läuft weiter, bis du es beendest')),
+        el('button', { class: 'btn primary', onclick: () => {
+          showStartDespiteActive = false; renderTraining();
+        } }, 'Weiter'))));
+  }
 
   /* Diese Woche */
   const mon = dateKey(mondayOf(new Date()));
@@ -995,7 +1035,11 @@ function renderTrainingStart(host){
       const exN = p.items.filter(it => exById(it.exerciseId)).length;
       pc.append(el('div', { class: 'li' },
         el('button', { class: 'grow', style: 'text-align:left;min-width:0',
-          onclick: () => startWorkoutFromPlan(p.id) },
+          onclick: async () => {
+            if (guardActiveWorkout()) return;
+            if (await confirmDlg(`Training „${p.name}" jetzt starten?`, { okLabel: 'Starten' }))
+              startWorkoutFromPlan(p.id);
+          } },
           el('div', { class: 't' }, p.name),
           el('div', { class: 's' }, plural(exN, 'Übung', 'Übungen') +
             (p.lastUsedAt ? ' · zuletzt ' + fmtFull(dateKey(new Date(p.lastUsedAt))) : ' · noch nie benutzt'))),
@@ -1056,6 +1100,7 @@ function renderTrainingStart(host){
   }
 }
 function startWorkout(templateId){
+  if (guardActiveWorkout()) return;
   const wo = {
     id: uid(), date: dateKey(new Date()), startedAt: Date.now(), finishedAt: null,
     note: '', planName: '', entries: [],
@@ -1077,6 +1122,7 @@ function startWorkout(templateId){
 }
 /* Training aus einem Plan starten — Übungen in Plan-Reihenfolge, Gewichte vom letzten Mal */
 function startWorkoutFromPlan(planId){
+  if (guardActiveWorkout()) return;
   const p = state.plans.find(x => x.id === planId);
   if (!p) return;
   const wo = {
@@ -1267,8 +1313,13 @@ function pickExerciseForPlan(p, done){
 function renderWorkoutEditor(host, wo, { live }){
   const refresh = () => { host.innerHTML = ''; renderWorkoutEditor(host, wo, { live }); };
   if (live){
-    host.append(el('div', { class: 'h1' }, 'Training läuft'),
-      el('div', { class: 'sub' }, fmtDay(wo.date) + trainDuration(wo)));
+    host.append(el('div', { class: 'row', style: 'margin-top:14px' },
+      el('button', { class: 'iconbtn', 'aria-label': 'Zur Startseite — das Training läuft weiter',
+        onclick: () => { showStartDespiteActive = true; renderTraining(); } }, '‹'),
+      el('div', { class: 'grow' },
+        el('div', { class: 'h1', style: 'margin:0' },
+          wo.planName ? wo.planName : 'Training läuft'),
+        el('div', { class: 'sub' }, fmtDay(wo.date) + trainDuration(wo)))));
   }
   for (const entry of wo.entries) host.append(entryCard(wo, entry, live, refresh));
 
@@ -2499,6 +2550,33 @@ function renderErnaehrung(){
     }
   }
 
+  /* Supplemente: dein aktueller Plan */
+  host.append(el('div', { class: 'mealhead', style: 'margin-top:20px' },
+    el('div', { class: 't' }, 'Supplemente'),
+    el('button', { class: 'add', html: IC.plus, 'aria-label': 'Supplement hinzufügen',
+      onclick: () => openSuppEditor(null) })));
+  if (state.supps.length){
+    const scard = el('div', { class: 'card', style: 'padding:2px 12px' });
+    const sorted = [...state.supps].sort((a, b) =>
+      (a.paused ? 1 : 0) - (b.paused ? 1 : 0) || a.name.localeCompare(b.name, 'de'));
+    for (const s of sorted){
+      const bits = [];
+      if (s.dose) bits.push(s.dose);
+      if (s.timing.length) bits.push(s.timing.join(' & '));
+      bits.push('seit ' + fmtFull(dateKey(new Date(s.sinceAt))));
+      scard.append(el('button', { class: 'fentry', style: s.paused ? 'opacity:.5' : '',
+        onclick: () => openSuppEditor(s.id) },
+        el('div', { class: 'grow' },
+          el('div', { class: 'n' }, s.name + (s.paused ? ' · pausiert' : '')),
+          el('div', { class: 's' }, bits.join(' · ')),
+          s.note ? el('div', { class: 's', style: 'font-style:italic' }, s.note) : null)));
+    }
+    host.append(scard);
+  } else {
+    host.append(el('div', { class: 'sub', style: 'margin:4px 2px' },
+      'Hier notierst du deinen aktuellen Plan — z. B. „Kreatin, 5 g, morgens". So behältst du den Überblick, was du gerade nimmst und seit wann.'));
+  }
+
   /* Wochen-Überblick */
   const days14 = [];
   const base = parseKey(today);
@@ -2546,6 +2624,72 @@ function openMacroTargets(){
         'Faustregel Muskelaufbau: ca. 2 g Eiweiß pro kg Körpergewicht.'),
       el('button', { class: 'btn primary block', style: 'margin-top:14px', onclick: close }, 'Fertig'));
   }, () => renderCurrentView());
+}
+
+/* Supplement anlegen/bearbeiten */
+const SUPP_TIMES = ['Morgens', 'Mittags', 'Abends', 'Vor dem Training', 'Nach dem Training', 'Zum Essen'];
+function openSuppEditor(suppId){
+  const isNew = !suppId;
+  const s = isNew
+    ? { id: uid(), name: '', dose: '', timing: [], note: '', paused: false,
+        sinceAt: Date.now(), createdAt: Date.now() }
+    : state.supps.find(x => x.id === suppId);
+  if (!s) return;
+  openSheet(isNew ? 'Neues Supplement' : s.name, (body, close) => {
+    const nameIn = el('input', { class: 'in', value: s.name, placeholder: 'z. B. Kreatin' });
+    const doseIn = el('input', { class: 'in', value: s.dose, placeholder: 'z. B. 5 g oder 2 Kapseln' });
+    const sel = new Set(s.timing);
+    const chips = el('div', { style: 'display:flex;flex-wrap:wrap;gap:8px' });
+    for (const t of SUPP_TIMES){
+      const b = el('button', { class: 'chip' + (sel.has(t) ? ' acc' : ''), style: 'padding:8px 12px;font-size:13.5px' }, t);
+      b.addEventListener('click', () => {
+        if (sel.has(t)) sel.delete(t); else sel.add(t);
+        b.className = 'chip' + (sel.has(t) ? ' acc' : '');
+      });
+      chips.append(b);
+    }
+    const noteIn = el('textarea', { class: 'in', placeholder: 'Notiz (z. B. „mit viel Wasser", Marke, Grund) …',
+      style: 'min-height:60px' });
+    noteIn.value = s.note || '';
+    body.append(
+      el('label', { class: 'f' }, el('span', {}, 'Name'), nameIn),
+      el('label', { class: 'f' }, el('span', {}, 'Menge pro Einnahme'), doseIn),
+      el('label', { class: 'f' }, el('span', {}, 'Wann? (mehrere möglich)'), chips),
+      el('label', { class: 'f' }, el('span', {}, 'Notiz'), noteIn));
+    if (!isNew) body.append(el('div', { class: 'sub', style: 'margin-top:8px' },
+      'Diese Einstellung gilt seit ' + fmtFull(dateKey(new Date(s.sinceAt))) +
+      '. Änderst du Menge oder Zeitpunkt, startet das Datum neu.'));
+    body.append(el('button', { class: 'btn primary block', style: 'margin-top:14px', onclick: () => {
+      const name = nameIn.value.trim();
+      if (!name){ nameIn.classList.add('err'); nameIn.focus(); return; }
+      const newTiming = SUPP_TIMES.filter(t => sel.has(t));
+      /* Dosis-/Zeitpunkt-Änderung = neue Einstellung → „seit"-Datum neu setzen */
+      if (!isNew && (s.dose !== doseIn.value.trim() || s.timing.join('|') !== newTiming.join('|')))
+        s.sinceAt = Date.now();
+      s.name = name;
+      s.dose = doseIn.value.trim();
+      s.timing = newTiming;
+      s.note = noteIn.value.trim();
+      if (isNew) state.supps.push(s);
+      save(); close();
+      if (curView === 'ernaehrung') renderErnaehrung();
+    } }, 'Speichern'));
+    if (!isNew){
+      body.append(el('button', { class: 'btn block', style: 'margin-top:8px', onclick: () => {
+        s.paused = !s.paused;
+        save(); close();
+        if (curView === 'ernaehrung') renderErnaehrung();
+      } }, s.paused ? 'Weiter nehmen (Pause beenden)' : 'Pausieren (nehme ich gerade nicht)'));
+      body.append(el('button', { class: 'btn block danger', style: 'margin-top:8px', onclick: async () => {
+        if (await confirmDlg(`„${s.name}" aus deinem Supplement-Plan löschen?`, { okLabel: 'Löschen', danger: true })){
+          state.supps = state.supps.filter(x => x.id !== s.id);
+          save(); close();
+          if (curView === 'ernaehrung') renderErnaehrung();
+        }
+      } }, 'Löschen'));
+    }
+    if (isNew) setTimeout(() => nameIn.focus(), 60);
+  });
 }
 
 /* Lebensmittel auswählen (Suche, Favoriten, Scanner, Neuanlage) */
@@ -3010,6 +3154,15 @@ function mergeBackup(obj){
     fById.set(f.id, f);
     if (f.barcode) fByCode.set(f.barcode, f);
     fByName.set(f.name.trim().toLowerCase(), f);
+  }
+  /* Supplemente ergänzen (per id, Namens-Dubletten überspringen) */
+  const sById = new Set(state.supps.map(s => s.id));
+  const sByName = new Set(state.supps.map(s => s.name.trim().toLowerCase()));
+  for (const s of imp.supps){
+    if (sById.has(s.id) || sByName.has(s.name.trim().toLowerCase())) continue;
+    state.supps.push(s);
+    sById.add(s.id);
+    sByName.add(s.name.trim().toLowerCase());
   }
   const remapEntry = e => { if (e.foodId && fRemap.has(e.foodId)) e.foodId = fRemap.get(e.foodId); };
   for (const [dk, day] of Object.entries(imp.days)){
