@@ -297,7 +297,7 @@ video.scanvid{ width:100%; max-height:46vh; border-radius:14px; background:#000;
    ========================================================================= */
 
 /* ---------- kleine Helfer ---------- */
-const APP_VERSION = '3.2';
+const APP_VERSION = '3.3';
 const $ = s => document.querySelector(s);
 function el(tag, attrs = {}, ...kids){
   const n = document.createElement(tag);
@@ -389,6 +389,7 @@ function defaultState(){
     foods: [],
     days: {},
     supps: [],
+    weights: {},
     activeWorkoutId: null,
     timer: null,
     ui: { statsExercise: 'all', statsRange: 90, statsMetric: 'e1', welcomeDismissed: false },
@@ -521,6 +522,14 @@ function migrate(st){
       sinceAt: Number.isFinite(s.sinceAt) ? s.sinceAt : Date.now(),
       createdAt: Number.isFinite(s.createdAt) ? s.createdAt : Date.now(),
     }));
+  /* Körpergewicht normalisieren (ein Wert pro Tag) */
+  const rawW = (st.weights && typeof st.weights === 'object' && !Array.isArray(st.weights)) ? st.weights : {};
+  st.weights = {};
+  for (const [dk, kg] of Object.entries(rawW)){
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dk)) continue;
+    const v = Number(kg);
+    if (Number.isFinite(v) && v >= 20 && v <= 400) st.weights[dk] = Math.round(v * 10) / 10;
+  }
   st.activeWorkoutId = st.workouts.some(w => w.id === st.activeWorkoutId) ? st.activeWorkoutId : null;
   st.timer = (st.timer && typeof st.timer === 'object' && Number.isFinite(st.timer.endAt)) ? st.timer : null;
   st.version = 1;
@@ -1391,6 +1400,11 @@ function entryCard(wo, entry, live, refresh){
     } },
       `▲ Vorschlag: heute ${fmtNum(sugg.w)} kg probieren — letztes Mal überall ${target.repHigh} Wdh. geschafft. (Antippen zum Übernehmen)`));
   }
+  /* Stagnations-Hinweis (nur wenn kein Steigerungs-Vorschlag ansteht) */
+  if (ex && !sugg && !entry.sets.some(s => s.done)){
+    const stag = stagnationInfo(ex.id);
+    if (stag) card.append(el('div', { class: 'prev', style: 'color:var(--warn)' }, stagnationText(stag)));
+  }
 
   card.append(el('div', { class: 'sethead' },
     el('span', {}, 'Satz'), el('span', {}, 'kg'), el('span', {}, 'Wdh.'), el('span', {}, '✓'), el('span', {}, '')));
@@ -1442,11 +1456,49 @@ function planItemFor(wo, exId){
   const p = state.plans.find(x => x.name.toLowerCase() === wo.planName.toLowerCase());
   return p ? (p.items.find(it => it.exerciseId === exId) || null) : null;
 }
+/* Stagnation erkennen: seit ≥14 Tagen (und ≥2 Einheiten) kein neuer e1RM-Bestwert */
+function stagnationInfo(exId){
+  const sessions = [];
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    const m = sessionMetrics(w, exId);
+    if (m) sessions.push({ date: w.date, e1: m.e1 });
+  }
+  if (sessions.length < 3) return null;
+  let peakIdx = 0;
+  sessions.forEach((s, i) => { if (s.e1 >= sessions[peakIdx].e1) peakIdx = i; });
+  const peak = sessions[peakIdx];
+  const daysSince = Math.round((Date.now() - parseKey(peak.date).getTime()) / 864e5);
+  const sessionsAfter = sessions.length - 1 - peakIdx;
+  if (daysSince < 14 || sessionsAfter < 2) return null;
+  const last = sessions[sessions.length - 1];
+  return { days: daysSince, peak: peak.e1, last: last.e1, negative: last.e1 < peak.e1 * 0.97 };
+}
+function stagnationText(stag){
+  return `⚑ Seit ${stag.days} Tagen kein neuer Bestwert` +
+    (stag.negative ? ` — zuletzt sogar darunter (${fmtNum(stag.last)} statt ${fmtNum(stag.peak)} kg e1RM)` : ` (Bestwert ${fmtNum(stag.peak)} kg e1RM)`) +
+    '. Ideen: kleinere Gewichtssprünge, eine Wiederholung mehr — oder bewusst eine leichte Woche einlegen.';
+}
+
 /* Kleine Historie: die letzten 5 Einheiten einer Übung, ohne das Training zu verlassen */
 function openExerciseHistory(exId, wo){
   const ex = exById(exId);
   if (!ex) return;
   openSheet(ex.name + ' — letzte Einheiten', body => {
+    /* Mini-Kurve: geschätzte Maximalkraft der letzten 10 Einheiten */
+    const all = [];
+    for (const w2 of sortedWorkouts()){
+      if (!w2.finishedAt || w2.id === wo.id) continue;
+      const m = sessionMetrics(w2, exId);
+      if (m) all.push({ x: parseKey(w2.date).getTime(), date: w2.date, y: m.e1 });
+    }
+    if (all.length >= 2){
+      const ccard = el('div', { class: 'card' });
+      body.append(ccard);
+      drawLineChart(ccard, all.slice(-10), { unit: 'kg', fmt: v2 => fmtNum(v2, 1) });
+      body.append(el('div', { class: 'sub', style: 'margin:2px 4px 8px' },
+        'Kurve = geschätzte Maximalkraft (e1RM). Die große Ansicht findest du unter Statistik.'));
+    }
     const list = sortedWorkouts();
     let idx = list.findIndex(w => w.id === wo.id);
     if (idx === -1) idx = list.length;
@@ -2128,6 +2180,13 @@ function renderStatsExercise(host, exId, cutoff){
     tile('Bestes e1RM', bestE1 ? fmtNum(bestE1.v) : '–', bestE1 ? 'kg · ' + fmtShort(bestE1.date) : 'kg'),
     tile('Letzte Einheit', last ? fmtNum(last.best) : '–', last ? 'kg · ' + fmtShort(last.date) : '')));
 
+  /* Stagnations-Hinweis */
+  const stagS = stagnationInfo(exId);
+  if (stagS){
+    host.append(el('div', { class: 'card', style: 'padding:11px 12px;border-color:rgba(250,178,25,.45)' },
+      el('div', { class: 'sub', style: 'color:var(--warn)' }, stagnationText(stagS))));
+  }
+
   /* Damals und heute: Vergleich mit der Einheit vor ~12/6/3 Monaten */
   const cmp = thenComparison(exId);
   if (cmp){
@@ -2550,6 +2609,70 @@ function renderErnaehrung(){
     }
   }
 
+  /* Körpergewicht */
+  host.append(el('div', { class: 'mealhead', style: 'margin-top:20px' },
+    el('div', { class: 't' }, 'Körpergewicht'),
+    el('button', { class: 'add', html: IC.plus, 'aria-label': 'Gewicht eintragen',
+      onclick: openWeightSheet })));
+  const wKeys = Object.keys(state.weights).sort();
+  if (wKeys.length){
+    const wcard = el('div', { class: 'card' });
+    const lastK = wKeys[wKeys.length - 1];
+    const lastKg = state.weights[lastK];
+    /* Vergleich: nächstliegender Eintrag von vor mindestens 6 Tagen */
+    const anchor = parseKey(lastK); anchor.setDate(anchor.getDate() - 6);
+    const anchorK = dateKey(anchor);
+    const prevKeys = wKeys.filter(k => k <= anchorK);
+    const baseK = prevKeys.length ? prevKeys[prevKeys.length - 1] : null;
+    let deltaTxt = '';
+    if (baseK){
+      const d = Math.round((lastKg - state.weights[baseK]) * 10) / 10;
+      deltaTxt = ` · ${d > 0 ? '+' : ''}${fmtNum(d, 1)} kg seit ${fmtShort(baseK)}`;
+    }
+    wcard.append(el('div', { class: 'row' },
+      el('div', { class: 'grow' },
+        el('div', { class: 'kcalbig' }, fmtNum(lastKg, 1) + ' kg'),
+        el('div', { class: 'sub' }, 'zuletzt am ' + fmtFull(lastK) + deltaTxt))));
+    if (wKeys.length >= 2){
+      const pts = wKeys.slice(-60).map(k => ({ x: parseKey(k).getTime(), date: k, y: state.weights[k] }));
+      const chartHost = el('div', { style: 'margin-top:8px' });
+      wcard.append(chartHost);
+      drawLineChart(chartHost, pts, { unit: 'kg', fmt: v2 => fmtNum(v2, 1) });
+    }
+    host.append(wcard);
+    /* Wochenübersicht: Ø pro Woche mit Veränderung */
+    const byWeek = new Map();
+    for (const k of wKeys){
+      const wk = dateKey(mondayOf(parseKey(k)));
+      if (!byWeek.has(wk)) byWeek.set(wk, []);
+      byWeek.get(wk).push(state.weights[k]);
+    }
+    const weeks = [...byWeek.entries()]
+      .map(([wk, arr]) => ({ wk, avg: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10 }))
+      .sort((a, b) => a.wk.localeCompare(b.wk));
+    if (weeks.length >= 2){
+      const tcard = el('div', { class: 'card', style: 'overflow-x:auto' });
+      const tbl = el('table', { class: 'datatable' },
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'Woche'), el('th', {}, 'Ø Gewicht'), el('th', {}, 'Veränderung'))));
+      const tb = el('tbody');
+      const lastWeeks = weeks.slice(-8);
+      for (let i = lastWeeks.length - 1; i >= 0; i--){
+        const w2 = lastWeeks[i];
+        const prev = i > 0 ? lastWeeks[i - 1] : (weeks.length > lastWeeks.length ? weeks[weeks.length - lastWeeks.length - 1] : null);
+        const d = prev ? Math.round((w2.avg - prev.avg) * 10) / 10 : null;
+        tb.append(el('tr', {},
+          el('td', {}, 'KW ' + isoWeek(parseKey(w2.wk))),
+          el('td', {}, fmtNum(w2.avg, 1) + ' kg'),
+          el('td', {}, d === null ? '—' : (d > 0 ? '+' : '') + fmtNum(d, 1) + ' kg')));
+      }
+      tbl.append(tb); tcard.append(tbl); host.append(tcard);
+    }
+  } else {
+    host.append(el('div', { class: 'sub', style: 'margin:4px 2px' },
+      'Wiege dich regelmäßig (am besten morgens) und trage das Gewicht hier ein — dann siehst du Kurve und Wochen-Durchschnitt.'));
+  }
+
   /* Supplemente: dein aktueller Plan */
   host.append(el('div', { class: 'mealhead', style: 'margin-top:20px' },
     el('div', { class: 't' }, 'Supplemente'),
@@ -2624,6 +2747,41 @@ function openMacroTargets(){
         'Faustregel Muskelaufbau: ca. 2 g Eiweiß pro kg Körpergewicht.'),
       el('button', { class: 'btn primary block', style: 'margin-top:14px', onclick: close }, 'Fertig'));
   }, () => renderCurrentView());
+}
+
+/* Körpergewicht eintragen (für den gerade angezeigten Tag) */
+function openWeightSheet(){
+  const dk = activeFoodDay();
+  const today = dateKey(new Date());
+  const wKeys = Object.keys(state.weights).sort();
+  const lastKg = wKeys.length ? state.weights[wKeys[wKeys.length - 1]] : null;
+  openSheet('Körpergewicht', (body, close) => {
+    const wIn = el('input', { class: 'in', inputmode: 'decimal', autocomplete: 'off',
+      style: 'font-size:24px;text-align:center;font-weight:750',
+      value: state.weights[dk] !== undefined ? fmtInput(state.weights[dk]) : (lastKg !== null ? fmtInput(lastKg) : ''),
+      placeholder: 'kg' });
+    body.append(el('label', { class: 'f' },
+      el('span', {}, 'Gewicht in kg ' + (dk === today ? '(heute)' : '(für den ' + fmtFull(dk) + ')')), wIn));
+    if (dk !== today) body.append(el('div', { class: 'sub', style: 'margin-top:6px' },
+      'Tipp: Mit den ‹ ›-Pfeilen oben kannst du auch vergangene Tage nachtragen.'));
+    body.append(el('button', { class: 'btn primary block', style: 'margin-top:14px', onclick: () => {
+      const v = parseNum(wIn.value);
+      if (v === null || v < 20 || v > 400){ wIn.classList.add('err'); return; }
+      state.weights[dk] = Math.round(v * 10) / 10;
+      save(); close();
+      renderErnaehrung();
+      toast('Gewicht gespeichert: ' + fmtNum(state.weights[dk], 1) + ' kg');
+    } }, 'Speichern'));
+    if (state.weights[dk] !== undefined){
+      body.append(el('button', { class: 'btn block danger', style: 'margin-top:8px', onclick: async () => {
+        if (await confirmDlg('Gewichts-Eintrag für diesen Tag löschen?', { okLabel: 'Löschen', danger: true })){
+          delete state.weights[dk];
+          save(); close(); renderErnaehrung();
+        }
+      } }, 'Eintrag löschen'));
+    }
+    setTimeout(() => { wIn.focus(); try { wIn.select(); } catch (e) {} }, 60);
+  });
 }
 
 /* Supplement anlegen/bearbeiten */
@@ -3164,6 +3322,9 @@ function mergeBackup(obj){
     sById.add(s.id);
     sByName.add(s.name.trim().toLowerCase());
   }
+  /* Körpergewicht: fehlende Tage übernehmen */
+  for (const [dk, kg] of Object.entries(imp.weights))
+    if (state.weights[dk] === undefined) state.weights[dk] = kg;
   const remapEntry = e => { if (e.foodId && fRemap.has(e.foodId)) e.foodId = fRemap.get(e.foodId); };
   for (const [dk, day] of Object.entries(imp.days)){
     if (!state.days[dk]){
