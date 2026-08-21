@@ -242,6 +242,23 @@ select.in{ appearance:none; -webkit-appearance:none;
 .fentry .kc{ font-size:15px; font-weight:650; font-variant-numeric:tabular-nums; color:var(--ink2); }
 video.scanvid{ width:100%; max-height:46vh; border-radius:14px; background:#000; object-fit:cover; }
 
+/* Wochenbericht */
+.exrep{ border:1px solid var(--line); border-radius:12px; margin:8px 0; overflow:hidden; background:var(--sunken); }
+.exrep .rhead{ display:block; width:100%; text-align:left; padding:11px 12px; }
+.exrep .rname{ display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; }
+.exrep .rcaret{ color:var(--muted); font-size:12px; transition:transform .15s; }
+.exrep.open .rcaret{ transform:rotate(90deg); }
+.exrep .rmet{ display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12.5px; color:var(--ink2);
+  margin:5px 0 0 20px; font-variant-numeric:tabular-nums; }
+.exrep .rmet .lbl{ color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; margin-right:3px; }
+.exrep .rbody{ padding:0 12px 12px; }
+.repbox{ padding:9px 12px; border-radius:0 10px 10px 0; margin:8px 0; font-size:13px; color:var(--ink2); }
+.repbox.warn{ border-left:3px solid var(--warn); background:rgba(250,178,25,.07); }
+.repbox.reco{ border-left:3px solid var(--accent); background:rgba(57,135,229,.08); font-size:13.5px; }
+.legend{ display:flex; gap:14px; font-size:12px; color:var(--ink2); margin:6px 0 2px; }
+.lkey{ display:inline-block; width:14px; height:0; border-top:2.5px solid; vertical-align:middle;
+  border-radius:2px; margin-right:5px; }
+
 /* Toast */
 #toast{ position:fixed; left:50%; transform:translateX(-50%);
   bottom:calc(150px + env(safe-area-inset-bottom)); z-index:80;
@@ -297,7 +314,7 @@ video.scanvid{ width:100%; max-height:46vh; border-radius:14px; background:#000;
    ========================================================================= */
 
 /* ---------- kleine Helfer ---------- */
-const APP_VERSION = '3.3';
+const APP_VERSION = '3.4';
 const $ = s => document.querySelector(s);
 function el(tag, attrs = {}, ...kids){
   const n = document.createElement(tag);
@@ -2029,6 +2046,8 @@ function renderStatistik(){
   const host = $('#view-statistik');
   host.innerHTML = '';
   host.append(el('div', { class: 'h1' }, 'Statistik'));
+  host.append(el('button', { class: 'btn primary block', style: 'margin:10px 0 4px', onclick: openWeeklyReport },
+    el('span', { html: IC.statistik }), 'Wochenbericht erstellen'));
 
   /* Filterzeile: Übung + Zeitraum (gilt für alles darunter) */
   const usedIds = new Set();
@@ -2493,6 +2512,273 @@ function drawBarChart(card, bars, { unit, allLabels }){
   hitAll.addEventListener('pointerdown', e => showBarTip(e.clientX));
   hitAll.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
   svg.append(hitAll);
+}
+
+/* =========================================================================
+   WOCHENBERICHT — die App analysiert sich selbst
+   ========================================================================= */
+function sessionAvgE1(w, exId){
+  const sets = setsOf(w, exId);
+  if (!sets.length) return null;
+  let s = 0;
+  for (const x of sets) s += (x.r === 1 ? x.w : x.w * (1 + x.r / 30));
+  return Math.round(s / sets.length * 10) / 10;
+}
+/* Letzte n beendete Einheiten einer Übung, aufsteigend */
+function exSessions(exId, n){
+  const out = [];
+  for (const w of sortedWorkouts()){
+    if (!w.finishedAt) continue;
+    const m = sessionMetrics(w, exId);
+    if (m) out.push({ date: w.date, sets: setsOf(w, exId), spitze: m.e1, breite: sessionAvgE1(w, exId), vol: m.vol });
+  }
+  return n ? out.slice(-n) : out;
+}
+/* Zwei-Linien-Diagramm: Spitze (blau) + Breite (orange) über Einheiten */
+function drawDualChart(card, rows){
+  const H = 190;
+  const { wrap, svg, tip, W } = chartFrame(card, H);
+  tip.remove();
+  if (rows.length < 2){
+    svg.remove();
+    wrap.append(el('div', { class: 'chart-empty' }, 'Noch zu wenige Einheiten für eine Kurve.'));
+    return;
+  }
+  const pad = { l: 46, r: 18, t: 14, b: 28 };
+  const vals = [];
+  for (const r of rows){ vals.push(r.spitze); if (r.breite !== null) vals.push(r.breite); }
+  const { lo, hi, ticks, dec } = niceTicks(Math.min(...vals), Math.max(...vals), 3);
+  const X = i => pad.l + (rows.length === 1 ? 0.5 : i / (rows.length - 1)) * (W - pad.l - pad.r);
+  const Y = v => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+  for (const tv of ticks){
+    svg.append(svgEl('line', { x1: pad.l, x2: W - pad.r, y1: Y(tv), y2: Y(tv), stroke: CH.grid, 'stroke-width': 1 }));
+    const lab = svgEl('text', { x: pad.l - 8, y: Y(tv) + 3.5, fill: CH.muted, 'font-size': 10.5,
+      'text-anchor': 'end', style: 'font-variant-numeric:tabular-nums' });
+    lab.textContent = fmtNum(tv, dec);
+    svg.append(lab);
+  }
+  const SERIES = [['spitze', CH.accent], ['breite', '#d95926']];
+  for (const [key, color] of SERIES){
+    const pts = rows.map((r, i) => ({ i, v: r[key] })).filter(p => p.v !== null);
+    if (pts.length < 2) continue;
+    svg.append(svgEl('path', {
+      d: pts.map((p, j) => (j ? 'L' : 'M') + X(p.i).toFixed(1) + ',' + Y(p.v).toFixed(1)).join(' '),
+      fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    const last = pts[pts.length - 1];
+    svg.append(svgEl('circle', { cx: X(last.i), cy: Y(last.v), r: 4, fill: color, stroke: CH.surface, 'stroke-width': 2 }));
+  }
+  const l1 = svgEl('text', { x: pad.l, y: H - 7, fill: CH.muted, 'font-size': 10 });
+  l1.textContent = fmtShort(rows[0].date);
+  const l2 = svgEl('text', { x: W - pad.r, y: H - 7, fill: CH.muted, 'font-size': 10, 'text-anchor': 'end' });
+  l2.textContent = fmtShort(rows[rows.length - 1].date);
+  svg.append(l1, l2);
+}
+/* Rollierendes 7-Tage-Fenster: 0 = letzte 7 Tage, 1 = die 7 davor … */
+function weekWindow(offset){
+  const end = parseKey(dateKey(new Date()));
+  end.setDate(end.getDate() - 7 * offset);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 6);
+  const sk = dateKey(start), ek = dateKey(end);
+  let kcal = 0, prot = 0, tracked = 0, wSum = 0, wN = 0;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)){
+    const k = dateKey(d);
+    const day = state.days[k];
+    if (day && day.entries.length){
+      tracked++;
+      kcal += day.entries.reduce((n, e) => n + e.kcal, 0);
+      prot += day.entries.reduce((n, e) => n + e.prot, 0);
+    }
+    if (state.weights[k] !== undefined){ wSum += state.weights[k]; wN++; }
+  }
+  return { sk, ek, tracked,
+    kcalAvg: tracked ? Math.round(kcal / tracked) : null,
+    protAvg: tracked ? Math.round(prot / tracked) : null,
+    weightAvg: wN ? Math.round(wSum / wN * 10) / 10 : null };
+}
+function openWeeklyReport(){
+  openSheet('Dein Wochenbericht', (body) => {
+    const today = dateKey(new Date());
+    const cutoff7 = dateKey(new Date(Date.now() - 6 * 864e5));
+    const M = state.settings.macro;
+
+    /* Überblick */
+    const wos7 = sortedWorkouts().filter(w => w.finishedAt && w.date >= cutoff7);
+    let sets7 = 0, vol7 = 0;
+    for (const w of wos7){ const st = workoutStats(w); sets7 += st.sets; vol7 += st.vol; }
+    const w0 = weekWindow(0), w1 = weekWindow(1), w2 = weekWindow(2);
+    const wDelta = (w0.weightAvg !== null && w1.weightAvg !== null)
+      ? Math.round((w0.weightAvg - w1.weightAvg) * 10) / 10 : null;
+    body.append(el('div', { class: 'sub' }, 'Zeitraum: letzte 7 Tage (' + fmtShort(cutoff7) + '–' + fmtShort(today) + ')'));
+    body.append(el('div', { class: 'tiles', style: 'grid-template-columns:repeat(2,1fr)' },
+      tile('Trainings', String(wos7.length), plural(sets7, 'Satz', 'Sätze')),
+      tile('Volumen', fmtNum(vol7, 0), 'kg bewegt'),
+      tile('Gewicht (Ø)', w0.weightAvg !== null ? fmtNum(w0.weightAvg, 1) : '–',
+        wDelta !== null ? (wDelta > 0 ? '+' : '') + fmtNum(wDelta, 1) + ' kg zur Vorwoche' : 'kg'),
+      tile('Kalorien (Ø)', w0.kcalAvg !== null ? fmtNum(w0.kcalAvg, 0) : '–',
+        w0.tracked + '/7 Tage erfasst · Ziel ' + fmtNum(M.kcal, 0))));
+
+    /* Übungen der Woche */
+    body.append(el('div', { class: 'h2' }, 'Deine Übungen (letzte 7 Tage)'));
+    const exIds = [];
+    for (const w of wos7)
+      for (const en of w.entries)
+        if (validSets(en).length && exById(en.exerciseId) && !exIds.includes(en.exerciseId))
+          exIds.push(en.exerciseId);
+    if (!exIds.length){
+      body.append(el('div', { class: 'sub', style: 'margin:4px 2px' }, 'Kein beendetes Training in den letzten 7 Tagen.'));
+    }
+    const stagList = [];
+    for (const exId of exIds){
+      const ex = exById(exId);
+      const all = exSessions(exId, 0);
+      const last5 = all.slice(-5);
+      const cur = all[all.length - 1];
+      const prev4 = all.slice(-5, -1);
+      const trend = (key) => {
+        if (!prev4.length) return { d: null, txt: 'erste Einheit' };
+        const base = Math.max(...prev4.map(r => r[key] ?? 0));
+        const d = Math.round((cur[key] - base) * 10) / 10;
+        return { d, txt: (d > 0.05 ? '▲ +' + fmtNum(d) : d < -0.05 ? '▼ ' + fmtNum(d) : '= ±0') };
+      };
+      const tS = trend('spitze'), tB = trend('breite'), tV = trend('vol');
+      const stag = stagnationInfo(exId);
+      if (stag) stagList.push({ ex, stag });
+      const chip = stag ? el('span', { class: 'chip w' }, 'Stagnation')
+        : (tS.d > 0.05 || tB.d > 0.05) ? el('span', { class: 'chip g' }, 'Steigerung')
+        : el('span', { class: 'chip' }, 'gehalten');
+      const card = el('div', { class: 'exrep' });
+      const rbody = el('div', { class: 'rbody hidden' });
+      const caret = el('span', { class: 'rcaret' }, '▸');
+      const head = el('button', { class: 'rhead', onclick: () => {
+        const open = rbody.classList.toggle('hidden');
+        card.classList.toggle('open', !open);
+        if (!open && !rbody.dataset.built){
+          rbody.dataset.built = '1';
+          rbody.append(el('div', { class: 'legend' },
+            el('span', {}, el('span', { class: 'lkey', style: 'border-color:var(--accent)' }), 'Spitze (e1RM)'),
+            el('span', {}, el('span', { class: 'lkey', style: 'border-color:#d95926' }), 'Breite (Ø aller Sätze)')));
+          const ch = el('div');
+          rbody.append(ch);
+          drawDualChart(ch, last5);
+          const tcard = el('div', { style: 'overflow-x:auto;margin-top:8px' });
+          const tbl = el('table', { class: 'datatable' },
+            el('thead', {}, el('tr', {},
+              el('th', {}, 'Datum'), el('th', {}, 'Alle Sätze'), el('th', {}, 'Volumen'),
+              el('th', {}, 'Spitze'), el('th', {}, 'Breite'))));
+          const tb = el('tbody');
+          for (const r of [...last5].reverse()){
+            tb.append(el('tr', {},
+              el('td', {}, fmtShort(r.date)),
+              el('td', { style: 'text-align:left;white-space:nowrap' }, r.sets.map(s => fmtNum(s.w) + '×' + s.r).join(' · ')),
+              el('td', {}, fmtNum(r.vol, 0)),
+              el('td', {}, fmtNum(r.spitze)),
+              el('td', {}, r.breite !== null ? fmtNum(r.breite) : '–')));
+          }
+          tbl.append(tb); tcard.append(tbl); rbody.append(tcard);
+        }
+      } },
+        el('div', { class: 'rname' }, caret, el('span', { class: 'grow' }, ex.name), chip),
+        el('div', { class: 'rmet' },
+          el('span', {}, el('span', { class: 'lbl' }, 'Spitze'), fmtNum(cur.spitze) + ' kg ', el('b', {}, tS.txt)),
+          el('span', {}, el('span', { class: 'lbl' }, 'Breite'), (cur.breite !== null ? fmtNum(cur.breite) + ' kg ' : '– '), el('b', {}, tB.txt)),
+          el('span', {}, el('span', { class: 'lbl' }, 'Volumen'), fmtNum(cur.vol, 0) + ' kg ', el('b', {}, tV.txt))));
+      card.append(head, rbody);
+      body.append(card);
+    }
+    if (exIds.length) body.append(el('div', { class: 'sub', style: 'margin:2px 2px 0' },
+      '▸ Übung antippen für Kurve + die letzten 5 Einheiten. Breite = Ø-Kraft ALLER Sätze — steigt sie, werden auch deine hinteren Sätze stärker.'));
+
+    /* Gewicht ↔ Kalorien */
+    body.append(el('div', { class: 'h2' }, 'Gewicht ↔ Kalorien'));
+    const wKeys = Object.keys(state.weights).sort().filter(k => k >= dateKey(new Date(Date.now() - 20 * 864e5)));
+    if (wKeys.length >= 2){
+      const gcard = el('div', { class: 'card', style: 'padding:12px' });
+      body.append(gcard);
+      const ch = el('div');
+      gcard.append(ch);
+      drawLineChart(ch, wKeys.map(k => ({ x: parseKey(k).getTime(), date: k, y: state.weights[k] })),
+        { unit: 'kg', fmt: v => fmtNum(v, 1) });
+      gcard.append(el('div', { class: 'sub', style: 'margin-top:4px' },
+        'Tages-Wiegungen der letzten 3 Wochen — Zickzack ist Wasser, der Trend zählt.'));
+    }
+    const kcard = el('div', { class: 'card', style: 'overflow-x:auto;padding:12px' });
+    const ktbl = el('table', { class: 'datatable' },
+      el('thead', {}, el('tr', {},
+        el('th', {}, 'Woche'), el('th', {}, 'Ø kcal'), el('th', {}, 'Erfasst'),
+        el('th', {}, 'Gewicht Ø'), el('th', {}, 'Δ'), el('th', {}, 'rechn. Defizit'))));
+    const ktb = el('tbody');
+    const wins = [w2, w1, w0];
+    wins.forEach((w, i) => {
+      const prev = i > 0 ? wins[i - 1] : null;
+      const d = (prev && w.weightAvg !== null && prev.weightAvg !== null)
+        ? Math.round((w.weightAvg - prev.weightAvg) * 10) / 10 : null;
+      const defizit = d !== null ? Math.round(-d * 7700 / 7) : null;
+      ktb.append(el('tr', {},
+        el('td', {}, fmtShort(w.sk) + '–' + fmtShort(w.ek)),
+        el('td', {}, w.kcalAvg !== null ? fmtNum(w.kcalAvg, 0) : '–'),
+        el('td', {}, w.tracked + '/7'),
+        el('td', {}, w.weightAvg !== null ? fmtNum(w.weightAvg, 1) : '–'),
+        el('td', { style: d !== null && d < 0 ? 'color:var(--good)' : '' },
+          d !== null ? (d > 0 ? '+' : '') + fmtNum(d, 1) : '–'),
+        el('td', {}, defizit !== null && defizit > 0 ? '≈ ' + fmtNum(defizit, 0) + ' kcal' : '–')));
+    });
+    ktbl.append(ktb); kcard.append(ktbl); body.append(kcard);
+    if (w0.kcalAvg !== null && wDelta !== null && wDelta < 0){
+      const tdee = w0.kcalAvg + Math.round(-wDelta * 7700 / 7);
+      body.append(el('div', { class: 'sub', style: 'margin:2px 2px' },
+        `Aus Essen + Gewichtstrend geschätzt liegt dein echter Verbrauch bei ~${fmtNum(tdee, 0)} kcal/Tag.`));
+    }
+
+    /* Prognose & Empfehlungen */
+    body.append(el('div', { class: 'h2' }, 'Prognose & Plan'));
+    const deltas = [];
+    if (w0.weightAvg !== null && w1.weightAvg !== null) deltas.push(w0.weightAvg - w1.weightAvg);
+    if (w1.weightAvg !== null && w2.weightAvg !== null) deltas.push(w1.weightAvg - w2.weightAvg);
+    if (deltas.length && w0.weightAvg !== null){
+      const rate = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+      if (rate < -0.05){
+        const pcard = el('div', { class: 'card', style: 'overflow-x:auto;padding:12px' });
+        const ptbl = el('table', { class: 'datatable' },
+          el('thead', {}, el('tr', {}, el('th', {}, 'Wenn das Tempo hält'), el('th', {}, 'Gewicht (geschätzt)'))));
+        const ptb = el('tbody');
+        for (const [wk, lab] of [[4, 'in 4 Wochen'], [8, 'in 8 Wochen'], [12, 'in 12 Wochen']])
+          ptb.append(el('tr', {}, el('td', {}, lab),
+            el('td', {}, '≈ ' + fmtNum(Math.round((w0.weightAvg + rate * wk) * 10) / 10, 1) + ' kg')));
+        ptbl.append(ptb); pcard.append(ptbl); body.append(pcard);
+        for (const ms of [105, 100, 95, 90]){
+          if (w0.weightAvg > ms && w0.weightAvg + rate * 12 < ms){
+            const weeks = Math.ceil((ms - w0.weightAvg) / rate);
+            body.append(el('div', { class: 'sub', style: 'margin:2px 2px' },
+              `🎯 Bei diesem Tempo bist du in ~${weeks} Wochen unter ${ms} kg. (Prognosen sind Richtwerte — der Körper macht Plateaus und Sprünge.)`));
+            break;
+          }
+        }
+      }
+    }
+    const recos = [];
+    if (deltas.length >= 2){
+      const rate = -(deltas.reduce((a, b) => a + b, 0) / deltas.length);
+      if (rate < 0.4) recos.push(`Dein Gewicht sinkt im Schnitt nur ${fmtNum(rate, 1)} kg/Woche (Ziel 0,5–0,75). Wenn das noch 1 Woche so bleibt: Kalorienziel von ${fmtNum(M.kcal, 0)} auf ${fmtNum(M.kcal - 200, 0)} senken (Essen-Reiter → ✎).`);
+      else if (rate > 1) recos.push(`Du verlierst über 1 kg/Woche — auf Dauer kostet das Muskeln. Kalorienziel von ${fmtNum(M.kcal, 0)} auf ${fmtNum(M.kcal + 200, 0)} erhöhen.`);
+      else recos.push(`Tempo passt (−${fmtNum(rate, 1)} kg/Woche im Zielkorridor 0,5–0,75) — Kalorienziel ${fmtNum(M.kcal, 0)} beibehalten.`);
+    } else {
+      recos.push('Für die Kalorien-Empfehlung brauche ich mindestens 2–3 Wochen Gewichts-Einträge — täglich wiegen lohnt sich.');
+    }
+    if (w0.protAvg !== null && w0.protAvg < M.prot - 10)
+      recos.push(`Eiweiß lag bei Ø ${fmtNum(w0.protAvg, 0)} g (Ziel ${fmtNum(M.prot, 0)}). Eine Portion Magerquark (250 g = 30 g Eiweiß) extra schließt die Lücke.`);
+    if (w0.tracked > 0 && w0.tracked < 5)
+      recos.push(`Nur ${w0.tracked} von 7 Tagen erfasst — je vollständiger das Tagebuch, desto genauer werden Verbrauchs-Schätzung und Empfehlungen.`);
+    for (const { ex, stag } of stagList)
+      recos.push(`${ex.name}: seit ${stag.days} Tagen kein neuer Bestwert — kleinere Sprünge, eine Wdh. mehr, oder bewusst eine leichte Woche.`);
+    const rbox = el('div', { class: 'repbox reco' }, el('b', {}, 'Empfehlungen für nächste Woche:'));
+    const ul = el('ul', { style: 'margin:6px 0 0;padding-left:18px' });
+    for (const r of recos) ul.append(el('li', { style: 'margin:4px 0' }, r));
+    rbox.append(ul);
+    body.append(rbox);
+    body.append(el('div', { class: 'sub', style: 'margin-top:10px;text-align:center' },
+      'Berechnet aus deinen App-Daten · Stand ' + fmtFull(today)));
+  });
 }
 
 /* =========================================================================
